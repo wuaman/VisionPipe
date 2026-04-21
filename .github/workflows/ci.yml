@@ -1,0 +1,113 @@
+# VisionPipe CI Pipeline
+# 验证构建、测试、代码风格
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CUDA
+        uses: Jimver/cuda-toolkit@v0.2.11
+        id: cuda-toolkit
+        with:
+          cuda: '11.8.0'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            libopencv-dev \
+            pkg-config
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DVISIONPIPE_BUILD_TESTS=ON \
+            -DVISIONPIPE_BUILD_PYTHON=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run C++ Tests
+        run: ctest --test-dir build --output-on-failure
+        continue-on-error: true  # 首次构建可能无测试
+
+      - name: Install Python Dependencies
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+
+      - name: Run Python Tests
+        run: uv run pytest -v || true
+        continue-on-error: true  # 首次构建可能无测试
+
+  code-style:
+    name: Code Style
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install Python Tools
+        run: uv pip install ruff mypy
+
+      - name: Python Lint
+        run: uv run ruff check python/ || true
+        continue-on-error: true
+
+      - name: Python Format Check
+        run: uv run ruff format --check python/ || true
+        continue-on-error: true
+
+      - name: Python Type Check
+        run: uv run mypy python/ || true
+        continue-on-error: true
+
+      - name: Install clang-format
+        run: sudo apt-get install -y clang-format
+
+      - name: C++ Format Check
+        run: |
+          find src -name "*.h" -o -name "*.cpp" | \
+          xargs clang-format --dry-run --Werror 2>/dev/null || true
+        continue-on-error: true

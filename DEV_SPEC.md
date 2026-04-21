@@ -1180,28 +1180,28 @@ public:
 
 | ID | 任务 | 阶段 | 优先级 | 状态 | 依赖 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| T0.1 | 目录结构与 CMake 配置 | P0 | P0 | 待开始 | — |
-| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | 待开始 | T0.1 |
-| T0.3 | 日志系统初始化 | P0 | P0 | 待开始 | T0.1 |
-| T1.1 | 节点基类与 DAG | P1 | P0 | 待开始 | T0.2 |
-| T1.2 | PipelineManager + 生命周期 | P1 | P0 | 待开始 | T1.1 |
-| T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | 待开始 | T0.2 |
-| T1.4 | parallel_workers 支持 | P1 | P0 | 待开始 | T1.1 |
-| T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | 待开始 | T1.3 |
-| T2.2 | 视频源节点（NVDEC + CPU） | P2 | P0 | 待开始 | T1.1 |
-| T2.3 | YOLOv8 检测节点 | P2 | P0 | 待开始 | T2.1、T2.2 |
-| T2.4 | 分类节点 + 帧内 batch | P2 | P0 | 待开始 | T2.1 |
-| T2.5 | 分割节点 + ByteTrack | P2 | P1 | 待开始 | T2.1 |
-| T3.1 | nanobind 绑定核心类 | P3 | P0 | 待开始 | T2.3、T2.4 |
-| T3.2 | PyNode 自定义业务节点 | P3 | P0 | 待开始 | T3.1 |
-| T3.3 | YAML 导出/导入 | P3 | P1 | 待开始 | T3.1 |
-| T4.1 | 内嵌管理 REST API | P4 | P0 | 待开始 | T3.1 |
-| T4.2 | WebRTC Sink | P4 | P0 | 待开始 | T3.1 |
-| T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | 待开始 | T4.1、T4.2 |
-| T4.4 | JsonResultSink + MjpegSink | P4 | P0 | 待开始 | T3.1 |
-| T5.1 | 多 Pipeline 并发集成测试 | P5 | P0 | 待开始 | T4.1 |
-| T5.2 | 性能 benchmark + 调优 | P5 | P0 | 待开始 | T5.1 |
-| T5.3 | 文档与 Demo | P5 | P1 | 待开始 | T5.2 |
+| T0.1 | 目录结构与 CMake 配置 | P0 | P0 | [x] | — |
+| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [ ] | T0.1 |
+| T0.3 | 日志系统初始化 | P0 | P0 | [ ] | T0.1 |
+| T1.1 | 节点基类与 DAG | P1 | P0 | [ ] | T0.2 |
+| T1.2 | PipelineManager + 生命周期 | P1 | P0 | [ ] | T1.1 |
+| T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [ ] | T0.2 |
+| T1.4 | parallel_workers 支持 | P1 | P0 | [ ] | T1.1 |
+| T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [ ] | T1.3 |
+| T2.2 | 视频源节点（NVDEC + CPU） | P2 | P0 | [ ] | T1.1 |
+| T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2 |
+| T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 |
+| T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 |
+| T3.1 | nanobind 绑定核心类 | P3 | P0 | [ ] | T2.3、T2.4 |
+| T3.2 | PyNode 自定义业务节点 | P3 | P0 | [ ] | T3.1 |
+| T3.3 | YAML 导出/导入 | P3 | P1 | [ ] | T3.1 |
+| T4.1 | 内嵌管理 REST API | P4 | P0 | [ ] | T3.1 |
+| T4.2 | WebRTC Sink | P4 | P0 | [ ] | T3.1 |
+| T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [ ] | T4.1、T4.2 |
+| T4.4 | JsonResultSink + MjpegSink | P4 | P0 | [ ] | T3.1 |
+| T5.1 | 多 Pipeline 并发集成测试 | P5 | P0 | [ ] | T4.1 |
+| T5.2 | 性能 benchmark + 调优 | P5 | P0 | [ ] | T5.1 |
+| T5.3 | 文档与 Demo | P5 | P1 | [ ] | T5.2 |
 
 ---
 
