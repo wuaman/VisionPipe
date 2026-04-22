@@ -5,9 +5,10 @@
 | 层次 | 组件 | 版本要求 | 用途 |
 |---|---|---|---|
 | 推理 | TensorRT | >=8.6 | 模型编译与 GPU 推理 |
-| 编解码（GPU） | NVDEC / NVENC（via FFmpeg with CUVID） | CUDA >=11.8 | 硬件视频编解码 |
-| 编解码（CPU） | FFmpeg | >=5.0 | CPU 软解码 / 容器封装 |
-| 图像处理 | OpenCV | >=4.7（CUDA build） | 预处理、可视化 |
+| 编解码（一期） | `cv::cudacodec::VideoReader`（NVDEC 硬解） | OpenCV >=4.7（CUDA + NVCUVID build） | GPU 直接解码，零拷贝，快速验证全链路 |
+| 编解码（二期） | ICodec HAL 抽象 + 平台专属实现 | 各平台 SDK | 跨平台硬件解码（NVDEC/DVPP/MPP） |
+| 编解码（CPU fallback） | OpenCV `VideoCapture` (CPU 路径) | OpenCV >=4.7 | 无 GPU 解码器时的 CPU 软解码 fallback |
+| 图像处理 | OpenCV | >=4.7（CUDA + NVCUVID build） | 预处理、可视化、一期视频解码 |
 | GPU 计算 | CUDA | >=11.8 | CUDA stream 管理、内存分配 |
 | 追踪算法 | ByteTrack（内置 C++ 实现） | — | 多目标追踪 |
 | Python 绑定 | nanobind | >=1.9 | C++ ↔ Python 互调，含 `gil_scoped_release` |
@@ -36,7 +37,7 @@
 | 任务 | 模型 | 优先级 | 交付物 |
 |---|---|---|---|
 | 目标检测 | YOLOv8 / YOLOv11 | P0 | ONNX→TRT 转换脚本 + 后处理插件 + benchmark |
-| 图像分类 | ResNet50 / EfficientNet-B0 | P0 | 同上 |
+| 图像分类 | ResNet50 / EfficientNet-B0 / ShuffleNetV2 | P0 | 同上 |
 | 实例分割 | YOLOv8-seg | P1 | 同上 |
 | 目标追踪 | ByteTrack | P1 | 内置 C++ 实现，无需 GPU |
 | 语义分割 | — | 二期 | — |

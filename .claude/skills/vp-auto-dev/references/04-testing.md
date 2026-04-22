@@ -6,6 +6,7 @@
 
 ### 4.2 分层测试结构
 
+```
 tests/
 ├── unit/           # 单元测试：纯逻辑验证，需 GPU 环境（部分测试加载模型）
 │   ├── cpp/        # Google Test
@@ -15,6 +16,7 @@ tests/
 │   └── python/
 └── e2e/            # 端到端测试：完整 pipeline 运行，含 WebRTC/REST API 验证
     └── python/
+```
 
 ### 4.3 各层测试目标
 
@@ -35,7 +37,7 @@ tests/
 |---|---|
 | `TrtInferNode` 端到端推理（输入 tensor → 输出 bbox） | 加载真实 YOLOv8 TRT engine |
 | 多 worker 并行推理结果一致性 | 对比 worker=1 和 worker=3 结果差异 <1e-4 |
-| `NvDecSource` 解码帧数与视频帧数匹配 | 固定测试视频文件（100帧）|
+| `FileSource`（GPU/CPU/AUTO 三种 DecodeMode）解码帧数与视频帧数匹配 | 固定测试视频文件（100帧）|
 | Pipeline 优雅停止：DRAINING 期间不丢已入队帧 | `BLOCK` 策略下计帧 |
 | ModelRegistry 跨 Pipeline 共享：两条 pipeline 共用同一 engine，VRAM 增量为零 | `nvml` 查询显存 |
 | `set_param()` 热更 ROI 原子性：热更后第 N+1 帧生效，第 N 帧不受影响 | 帧级断言 |

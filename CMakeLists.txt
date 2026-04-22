@@ -27,7 +27,7 @@ if(VISIONPIPE_USE_CUDA)
 endif()
 
 if(VISIONPIPE_USE_TENSORRT)
-    find_package(TensorRT 8.6 REQUIRED)
+    include("${CMAKE_SOURCE_DIR}/cmake/VisionPipeTensorRT.cmake")
 endif()
 
 find_package(OpenCV 4.7 REQUIRED COMPONENTS core imgproc imgcodecs videoio)
@@ -69,6 +69,12 @@ if(VISIONPIPE_BUILD_TESTS)
 endif()
 
 if(VISIONPIPE_BUILD_PYTHON)
+    # nanobind 在 Linux 上通过 Python_INCLUDE_DIRS 添加 Python.h；必须在加载 nanobind-config 前完成 Development 组件解析。
+    find_package(Python 3.8 REQUIRED COMPONENTS Interpreter Development.Module Development.SABIModule)
+    if(NOT Python_INCLUDE_DIRS AND DEFINED Python_INCLUDE_DIR)
+        set(Python_INCLUDE_DIRS "${Python_INCLUDE_DIR}")
+    endif()
+
     FetchContent_Declare(
         nanobind
         GIT_REPOSITORY https://github.com/wjakob/nanobind.git

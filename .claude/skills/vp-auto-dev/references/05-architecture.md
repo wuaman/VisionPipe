@@ -27,27 +27,62 @@
 │  │                                                               │    │
 │  │  SourceNode ──▶ [Queue] ──▶ InferNode ──▶ [Queue] ──▶ ...   │    │
 │  │     │                          │                              │    │
-│  │  NvDecSource              TrtInferNode                        │    │
-│  │  FileSource               (parallel_workers=N)               │    │
-│  │  RtspSource               Worker0: IExecContext+CudaStream   │    │
+│  │  FileSource               TrtInferNode                        │    │
+│  │  RtspSource               (parallel_workers=N)               │    │
+│  │  (DecodeMode:AUTO/GPU/CPU) Worker0: IExecContext+CudaStream   │    │
 │  │                           Worker1: IExecContext+CudaStream   │    │
 │  └───────────────────────────────────────────────────────────────┘   │
 │                                                                       │
 │  ┌────────────────────────────────────────────────────────────────┐  │
 │  │                    HAL 硬件抽象层                               │  │
-│  │  IModelEngine   IExecContext   IAllocator   ICodec             │  │
+│  │  IModelEngine   IExecContext   IAllocator   ICodec (二期)       │  │
 │  │       │               │            │           │               │  │
-│  │  TrtEngine     TrtExecCtx    CudaAlloc    NvDecCodec           │  │
-│  │  AscendEngine  AscendExecCtx AclAlloc     (二期) AscendCodec   │  │
-│  │  RknnEngine    RknnExecCtx   RknnAlloc    (三期)               │  │
+│  │  TrtEngine     TrtExecCtx    CudaAlloc    NvDecCodec (二期)    │  │
+│  │  AscendEngine  AscendExecCtx AclAlloc     AscendCodec (三期)   │  │
+│  │  RknnEngine    RknnExecCtx   RknnAlloc    (四期)               │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+#### 各层模块说明
+
+**Python 层**
+
+| 模块 | 说明 |
+|---|---|
+| Pipeline DSL | 用户面向的编排接口。`pipe = Pipeline()` 创建管道，`src >> det >> biz` 用 `>>` 运算符连接节点构成 DAG，`pipe.run()` 启动执行 |
+| Business Nodes | 用户继承 `PyNode` 基类编写的自定义业务逻辑节点（如告警判定、数据落库）。`process(frame)` 方法在 C++ 回调时短暂 acquire GIL 执行 |
+| Management API | aiohttp 协程服务，暴露 REST 接口（创建/启动/停止/销毁 pipeline、参数热更、健康检查），是运维和前端的对接入口 |
+
+**nanobind 绑定层**
+
+C++ 对象到 Python 的桥梁。将 Pipeline、Frame、Detection、各 Node 类型暴露为 Python 类，处理 GIL acquire/release，异常从 C++ 穿透到 Python（`VisionPipeError` → `visionpipe.VisionPipeError`）。
+
+**C++ 核心层**
+
+| 模块 | 说明 |
+|---|---|
+| PipelineManager | 全局管理器，持有所有 pipeline 实例。负责 create/start/stop/destroy 生命周期管理，支持同进程多 pipeline 并行 |
+| ModelRegistry | 模型引擎池。按 engine 文件 SHA-256 去重，多 pipeline 共享同一 `IModelEngine` 实例（节省显存）。引用计数 + TTL 过期清理 |
+| ControlChannel | 控制通道。WebSocket 接收实时参数（ROI 坐标、阈值），通过 `set_param()` 原子写入节点；REST 路径处理 pipeline CRUD |
+| Pipeline (DAG) | 单条 pipeline 的执行引擎。维护节点有向无环图，节点间通过 `BoundedQueue` 连接，异步生产者-消费者模式驱动数据流 |
+| SourceNode | 视频源节点（`FileSource` / `RtspSource`）。通过 `DecodeMode` 配置选择 GPU 硬解码（`cv::cudacodec`）或 CPU 软解码（`cv::VideoCapture`） |
+| InferNode | 推理节点。持有 `IModelEngine` 的多个 `IExecContext`（`parallel_workers=N`），每个 worker 独立 CUDA stream 并行推理，输出按 frame_id 重排序保证有序 |
+
+**HAL 硬件抽象层**
+
+| 接口 | 说明 | 一期实现 |
+|---|---|---|
+| IModelEngine | 重资源，代表一个已加载的模型引擎。由 ModelRegistry 管理生命周期，可创建多个推理上下文 | `TrtEngine`（TensorRT） |
+| IExecContext | 轻资源，每个 InferNode worker 独占一个。持有独立 CUDA stream，执行 `infer(input, output)` | `TrtExecCtx` |
+| IAllocator | 设备内存分配器。线程安全的 `alloc/free`，256 字节对齐 | `CudaAllocator` |
+| ICodec（二期） | 编解码 HAL 抽象。`open / decode_next / close`，各平台实现各自的硬件解码器。一期 SourceNode 直接调用 OpenCV，不经过此接口 | 二期实现 |
 
 ### 5.2 核心模块说明
 
 #### 5.2.1 节点基类体系
 
+```
 BaseNode (C++)
 ├── SourceNode          # 视频源：RTSP/文件/摄像头
 ├── InferNode           # 通用推理节点（持有 IExecContext × N workers）
@@ -61,8 +96,40 @@ BaseNode (C++)
 │   ├── MjpegSink       # MJPEG dev/debug
 │   └── RtspSink        # (预留接口，二期)
 └── PyNode (nanobind)   # Python 自定义业务节点基类
+```
 
-#### 5.2.2 Frame / Tensor 数据结构
+#### 5.2.2 SourceNode 配置
+
+```cpp
+enum class DecodeMode {
+    AUTO,    // 自动检测：优先 GPU 硬解，不可用时退化为 CPU
+    GPU,     // 强制 GPU 硬解（cv::cudacodec / ICodec），不可用时抛异常
+    CPU      // 强制 CPU 软解（cv::VideoCapture）
+};
+
+struct SourceConfig {
+    std::string    uri;            // 文件路径、RTSP URL、设备号
+    DecodeMode     decode_mode = DecodeMode::AUTO;
+    int            gpu_device   = 0;    // GPU 设备号（多卡场景）
+    size_t         queue_capacity = 16; // 输出队列容量
+    OverflowPolicy overflow_policy = OverflowPolicy::DROP_OLDEST;
+};
+```
+
+Python DSL 用法示例：
+
+```python
+# GPU 硬解码（默认）
+src = FileSource("video.mp4", decode_mode="auto")
+
+# 强制 CPU 软解码
+src = FileSource("video.mp4", decode_mode="cpu")
+
+# RTSP GPU 硬解码
+src = RtspSource("rtsp://...", decode_mode="gpu")
+```
+
+#### 5.2.3 Frame / Tensor 数据结构
 
 ```cpp
 struct Frame {
@@ -83,7 +150,7 @@ struct Frame {
 // - user_data 由 std::any 管理，Python 侧持有引用时需保证生命周期
 ```
 
-#### 5.2.3 BoundedQueue
+#### 5.2.4 BoundedQueue
 
 ```cpp
 template<typename T>
@@ -111,7 +178,7 @@ public:
 };
 ```
 
-#### 5.2.4 ModelRegistry
+#### 5.2.5 ModelRegistry
 
 ```cpp
 class ModelRegistry {
@@ -151,7 +218,7 @@ public:
 };
 ```
 
-#### 5.2.5 PipelineManager
+#### 5.2.6 PipelineManager
 
 ```cpp
 class PipelineManager {
@@ -179,7 +246,7 @@ public:
 enum class PipelineStatus { INIT, RUNNING, DRAINING, STOPPED, ERROR };
 ```
 
-#### 5.2.6 HAL 接口
+#### 5.2.7 HAL 接口
 
 ```cpp
 // 重资源：ModelRegistry 管理，跨 pipeline 共享
@@ -245,7 +312,7 @@ public:
 };
 ```
 
-#### 5.2.7 ControlChannel（管理 API + 参数热更）
+#### 5.2.8 ControlChannel（管理 API + 参数热更）
 
 - 内嵌 aiohttp 协程服务，与 C++ Pipeline 同进程运行，监听独立端口（默认 8080）
 - REST 接口：POST /pipelines、GET /pipelines、DELETE /pipelines/{id}、POST /pipelines/{id}/params、GET /pipelines/{id}/health

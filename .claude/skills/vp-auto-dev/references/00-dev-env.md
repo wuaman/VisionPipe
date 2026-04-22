@@ -34,7 +34,7 @@ uv pip install -e ".[dev]"
 
 | 依赖类型 | 管理方式 | 示例 |
 |----------|----------|------|
-| 重依赖（CUDA、TensorRT、FFmpeg、OpenCV） | 系统包管理器安装 | `apt install libopencv-dev` |
+| 重依赖（CUDA、TensorRT、OpenCV） | 系统包管理器或源码编译 | OpenCV 需源码编译，开启 `-DWITH_CUDA=ON -DWITH_NVCUVID=ON`（系统 `libopencv-dev` 通常不含 CUDA 模块） |
 | 轻依赖（spdlog、nlohmann-json、googletest、nanobind） | CMake FetchContent | 自动下载到 `build/_deps/` |
 
 ### 0.3 GPU 环境要求

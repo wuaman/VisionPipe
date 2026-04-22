@@ -436,7 +436,7 @@
 ---
 #### Phase 2：NVIDIA 推理 + 编解码（第 6-9 周）
 
-目的：接入真实 GPU，完成 TRT 推理、NVDEC/CPU 解码、YOLOv8/分类/分割验证。
+目的：接入真实 GPU，完成 TRT 推理、`cv::cudacodec` GPU 硬解码 / CPU 软解码、YOLOv8/分类/分割验证。
 
 任务 2.1：HAL NVIDIA 实现
 
@@ -455,23 +455,53 @@
 - 测试方法
   - Google Test 集成测试，需真实 GPU
 
-任务 2.2：视频源节点（NVDEC + CPU 软解）
+任务 2.2a：视频源节点（`cv::cudacodec` GPU 硬解码，一期）
 
 - 修改文件列表
+  - src/nodes/source/source_config.h
   - src/nodes/source/rtsp_source.h / .cpp
   - src/nodes/source/file_source.h / .cpp
-  - src/hal/nvidia/nvdec_codec.h / .cpp
   - tests/integration/cpp/test_source_nodes.cpp
 - 实现的类/函数
-  - class RtspSource : public NodeBase
-  - class FileSource : public NodeBase
-  - class NvDecCodec : public ICodec（NVDEC 硬解）
-  - CPU 软解路径（FFmpeg avcodec，作为 fallback）
+  - enum class DecodeMode { AUTO, GPU, CPU }
+  - struct SourceConfig（uri, decode_mode, gpu_device, queue_capacity, overflow_policy）
+  - class FileSource : public NodeBase（接受 SourceConfig）
+  - class RtspSource : public NodeBase（接受 SourceConfig）
+  - GPU 路径：`cv::cudacodec::VideoReader::nextFrame()` → `cv::cuda::GpuMat` → Frame.image
+  - CPU 路径：`cv::VideoCapture::read()` → `cv::Mat` → `GpuMat::upload()` → Frame.image
+  - AUTO 模式：运行时检测 NVCUVID 可用性，优先 GPU，不可用时自动退化为 CPU 并记日志
+  - GPU 模式：强制硬解，NVCUVID 不可用时抛 `CudaError`
+  - ICodec 接口暂不实现，Source 节点内部直接调用 OpenCV
 - 验收标准
   - FileSource 读取 100 帧测试视频，输出恰好 100 帧，无丢帧（BLOCK 模式）
-  - NVDEC 解码帧与 FFmpeg CPU 解码帧 PSNR >40dB
+  - RtspSource 能连接测试 RTSP 流并持续输出帧
+  - `decode_mode=GPU`：解码帧直接在 GPU 显存，无 CPU↔GPU 拷贝
+  - `decode_mode=CPU`：解码帧经 CPU → GPU upload，功能正确
+  - `decode_mode=AUTO`：有 NVCUVID 时走 GPU 路径，无则走 CPU 路径
 - 测试方法
-  - 集成测试，固定测试视频文件
+  - 集成测试，固定测试视频文件，分别测试 GPU / CPU / AUTO 三种模式
+
+任务 2.2b：ICodec HAL 抽象 + 跨平台编解码（二期，Phase 5 或独立优化迭代）
+
+- 修改文件列表
+  - src/hal/icodec.h（新增 ICodec HAL 接口）
+  - src/hal/nvidia/nvdec_codec.h / .cpp
+  - src/nodes/source/file_source.cpp（重构为通过 ICodec 抽象解码）
+  - src/nodes/source/rtsp_source.cpp（同上）
+  - CMakeLists.txt（按需新增 FFmpeg / 厂商 SDK 依赖）
+  - tests/integration/cpp/test_icodec_impl.cpp
+- 实现的类/函数
+  - class ICodec（HAL 纯虚接口：open / decode_next / close / device_type）
+  - class NvDecCodec : public ICodec（可选升级为 FFmpeg CUVID 或直接 NVCUVID API，精细控制 CUDA stream）
+  - class OpenCvCodec : public ICodec（封装 `cv::cudacodec` + `cv::VideoCapture` fallback）
+  - （预留）class DvppCodec : public ICodec（华为昇腾 DVPP）
+  - （预留）class MppCodec : public ICodec（瑞芯微 MPP）
+  - Source 节点通过 ICodec 工厂按平台选择后端
+- 验收标准
+  - ICodec 接口测试：至少两种实现（NvDec + OpenCv）通过同一测试套件
+  - Source 节点通过 ICodec 工厂切换后端，功能不变
+- 测试方法
+  - 集成测试 + benchmark 对比脚本
 
 任务 2.3：YOLOv8 检测节点（P0）
 
@@ -497,14 +527,18 @@
 - 修改文件列表
   - src/nodes/infer/classifier_node.h / .cpp
   - src/nodes/infer/post/classification_softmax.h
+  - models/resnet50/convert.sh（ONNX→TRT 转换脚本）
+  - models/efficientnet_b0/convert.sh
+  - models/shufflenetv2/convert.sh
   - tests/integration/cpp/test_classifier_node.cpp
 - 实现的类/函数
   - class ClassifierNode : public InferNode（自动帧内 batch crop）
   - class ClassificationSoftmax
 - 验收标准
+  - ResNet50 / EfficientNet-B0 / ShuffleNetV2 三个模型均完成 ONNX→TRT 转换并通过推理验证
   - 单帧 20 个 crop 打包成 batch=20 推理，吞吐 ≥ 单张循环推理 10×
 - 测试方法
-  - 集成测试，计时对比
+  - 集成测试，计时对比，三个模型分别验证
 
 任务 2.5：YOLOv8-seg 分割节点 + ByteTrack（P1）
 
@@ -539,7 +573,7 @@
   - tests/unit/python/test_bindings.py
 - 实现的类/函数
   - 绑定：Pipeline、PipelineManager、Frame、Detection、Track
-  - 绑定：RtspSource、FileSource、DetectorNode、ClassifierNode、SegmentNode、ByteTrackNode、WebRTCSink、JsonResultSink、MjpegSink
+  - 绑定：DecodeMode、SourceConfig、RtspSource、FileSource、DetectorNode、ClassifierNode、SegmentNode、ByteTrackNode、WebRTCSink、JsonResultSink、MjpegSink
   - >> 运算符 Python 侧重载
 - 验收标准
   - Python 中 src >> det >> sink; pipe.run() 能运行完整 pipeline
@@ -649,7 +683,7 @@
 ---
 #### Phase 5：集成测试 + 性能调优（第 16-18 周）
 
-目的：达成性能基准目标，完成端到端测试，文档和 demo 收尾。
+目的：达成性能基准目标，完成端到端测试，ICodec HAL 跨平台编解码抽象（T2.2b），文档和 demo 收尾。
 
 任务 5.1：多 Pipeline 并发集成测试
 
@@ -696,15 +730,16 @@
 | ID | 任务 | 阶段 | 优先级 | 状态 | 依赖 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | T0.1 | 目录结构与 CMake 配置 | P0 | P0 | [x] | — |
-| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [ ] | T0.1 |
+| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [x] | T0.1 |
 | T0.3 | 日志系统初始化 | P0 | P0 | [ ] | T0.1 |
 | T1.1 | 节点基类与 DAG | P1 | P0 | [ ] | T0.2 |
 | T1.2 | PipelineManager + 生命周期 | P1 | P0 | [ ] | T1.1 |
 | T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [ ] | T0.2 |
 | T1.4 | parallel_workers 支持 | P1 | P0 | [ ] | T1.1 |
 | T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [ ] | T1.3 |
-| T2.2 | 视频源节点（NVDEC + CPU） | P2 | P0 | [ ] | T1.1 |
-| T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2 |
+| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 |
+| T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | P5 | P1 | [ ] | T2.2a、T5.1 |
+| T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2a |
 | T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 |
 | T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 |
 | T3.1 | nanobind 绑定核心类 | P3 | P0 | [ ] | T2.3、T2.4 |

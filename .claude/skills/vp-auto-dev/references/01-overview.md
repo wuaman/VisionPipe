@@ -4,7 +4,7 @@
 
 VisionPipe-py 是一个面向生产环境的**视频 AI 推理框架**，底层由 C++ 驱动以保证高性能，业务层由 Python 实现以保证灵活性。框架以**有向无环图（DAG）节点管道**为核心抽象，用户通过 Python DSL 编排节点，框架负责调度、并发、资源管理和硬件适配。
 
-一期聚焦 NVIDIA GPU（TensorRT + NVDEC/NVENC），架构预留标准硬件抽象层（HAL），后续可平滑扩展至华为昇腾、瑞芯微 RKNN 等异构推理卡。
+一期聚焦 NVIDIA GPU（TensorRT 推理 + `cv::cudacodec::VideoReader` GPU 硬解码），二期引入 ICodec HAL 抽象层，通过平台专属实现（NVDEC/DVPP/MPP）支持异构硬件。架构预留标准硬件抽象层（HAL），后续可平滑扩展至华为昇腾、瑞芯微 RKNN 等异构推理卡。
 
 ### 1.2 设计理念
 

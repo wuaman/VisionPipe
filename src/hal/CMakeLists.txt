@@ -2,6 +2,7 @@
 # 硬件抽象层：IModelEngine, IExecContext, IAllocator 接口及其 NVIDIA 实现
 
 add_library(visionpipe_hal STATIC
+    stub.cpp
     # 源文件将在后续任务中添加
     # nvidia/trt_model_engine.cpp
     # nvidia/trt_exec_context.cpp
