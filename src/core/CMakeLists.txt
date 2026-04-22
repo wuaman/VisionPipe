@@ -2,9 +2,11 @@
 # 静态库：包含 Pipeline, NodeBase, BoundedQueue, Frame, Tensor 等核心组件
 
 add_library(visionpipe_core STATIC
+    stub.cpp
     # 源文件将在后续任务中添加
-    # frame.cpp
-    # bounded_queue.cpp (header-only, 暂不需要)
+    # frame.cpp (header-only)
+    # bounded_queue.cpp (header-only)
+    # tensor.cpp (header-only)
     # node_base.cpp
     # pipeline.cpp
     # pipeline_manager.cpp
