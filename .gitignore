@@ -1,0 +1,48 @@
+# Build
+build/
+cmake-build-*/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+*.so
+
+# uv
+uv.lock
+
+# TensorRT engines (generated, not tracked)
+*.engine
+*.trt
+
+# TensorRT SDK downloads
+TensorRT-*.tar.gz*
+
+# Models (downloaded via scripts)
+models/**/*.onnx
+models/**/*.engine
+
+# Test data (downloaded via scripts)
+tests/data/*.mp4
+tests/data/coco_val_subset/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml
+
+# Logs
+*.log
