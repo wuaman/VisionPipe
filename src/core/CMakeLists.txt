@@ -3,6 +3,7 @@
 
 add_library(visionpipe_core STATIC
     stub.cpp
+    logger.cpp
     # 源文件将在后续任务中添加
     # frame.cpp (header-only)
     # bounded_queue.cpp (header-only)
@@ -11,7 +12,6 @@ add_library(visionpipe_core STATIC
     # pipeline.cpp
     # pipeline_manager.cpp
     # model_registry.cpp
-    # logger.cpp
 )
 
 target_include_directories(visionpipe_core

@@ -4,6 +4,7 @@
 set(VISIONPIPE_TEST_SOURCES
     unit/cpp/test_cmake_build.cpp
     unit/cpp/test_bounded_queue.cpp
+    unit/cpp/test_logger.cpp
 )
 
 add_executable(visionpipe_tests ${VISIONPIPE_TEST_SOURCES})
