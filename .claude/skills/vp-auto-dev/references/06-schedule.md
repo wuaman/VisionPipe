@@ -534,9 +534,16 @@
 - 实现的类/函数
   - class ClassifierNode : public InferNode（自动帧内 batch crop）
   - class ClassificationSoftmax
+- Frame 输出约定
+  - ClassifierNode 读取 `frame.detections`，对每个 detection 按 bbox 坐标从 `frame.image` 裁剪 crop
+  - 所有 crop 拼成 batch=N 一次推理（N = 当前帧 detections 数量）
+  - 推理完成后按 index 回写：`detections[i].class_id` ← 分类标签，`detections[i].confidence` ← softmax 最大概率
+  - 不新增 Frame 字段，不修改 `frame.image`，不修改 `detections[i].bbox`
+  - 若 `frame.detections` 为空，ClassifierNode 直接透传 Frame，不做任何推理
 - 验收标准
   - ResNet50 / EfficientNet-B0 / ShuffleNetV2 三个模型均完成 ONNX→TRT 转换并通过推理验证
   - 单帧 20 个 crop 打包成 batch=20 推理，吞吐 ≥ 单张循环推理 10×
+  - detections 为空时，Frame 原样透传，不触发推理
 - 测试方法
   - 集成测试，计时对比，三个模型分别验证
 
@@ -733,9 +740,9 @@
 | T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [x] | T0.1 |
 | T0.3 | 日志系统初始化 | P0 | P0 | [x] | T0.1 |
 | T1.1 | 节点基类与 DAG | P1 | P0 | [x] | T0.2 |
-| T1.2 | PipelineManager + 生命周期 | P1 | P0 | [ ] | T1.1 |
-| T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [ ] | T0.2 |
-| T1.4 | parallel_workers 支持 | P1 | P0 | [ ] | T1.1 |
+| T1.2 | PipelineManager + 生命周期 | P1 | P0 | [x] | T1.1 |
+| T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [x] | T0.2 |
+| T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
 | T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [ ] | T1.3 |
 | T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 |
 | T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | P5 | P1 | [ ] | T2.2a、T5.1 |

@@ -363,14 +363,43 @@ src = RtspSource("rtsp://...", decode_mode="gpu")
 
 #### 5.2.3 Frame / Tensor 数据结构
 
+##### Frame 累积语义
+
+**Frame 是节点间唯一的数据载体，采用累积（enrichment）模式**：一个 Frame 在整条 pipeline 中只存在一份，每个节点在其上叠加自己的输出，不创建新 Frame，不复制旧 Frame。
+
+```
+SourceNode       DetectorNode      ClassifierNode     TrackerNode       PyNode / SinkNode
+    │                  │                  │                 │                  │
+    ▼                  ▼                  ▼                 ▼                  ▼
+frame.image ──────►  读 image        读 image+         读 detections      读全部字段
+                     写 detections   读 detections      写 detections      写 user_data
+                                     写 detections       (更新 class_id)    （业务逻辑）
+                                     (class_id/conf)    写 tracks
+```
+
+各节点读写约定：
+
+| 节点类型 | 读取字段 | 写入字段 | 说明 |
+|---|---|---|---|
+| `SourceNode` | — | `stream_id`, `frame_id`, `pts_us`, `image` | 解码后的原始帧 |
+| `DetectorNode` | `image` | `detections[]`（bbox, coarse class_id, confidence） | YOLOv8 检测，class_id 为模型原始类别 |
+| `ClassifierNode` | `image`, `detections[]` | `detections[i].class_id`, `detections[i].confidence` | 对每个 detection 的 bbox crop 做细粒度分类，**覆盖** class_id 与 confidence |
+| `TrackerNode` | `detections[]` | `tracks[]`, `detections[i].track_id` | ByteTrack 关联，写入轨迹 ID |
+| `PyNode` | 任意字段 | `user_data` | Python 业务节点，结果挂载到 user_data |
+| `SinkNode` | 任意字段 | — | 只读，不修改 Frame |
+
+**禁止**：节点内不得替换整个 `frame.image`（会泄漏 GPU 内存）；不得拷贝 Frame（编译期已通过 `= delete` 阻止）。
+
+##### Frame 数据结构
+
 ```cpp
 struct Frame {
     int64_t  stream_id;        // 流标识符，同一 pipeline 内唯一
-    int64_t  frame_id;          // 全局单调递增，用于重排序
-    int64_t  pts_us;            // 时间戳（微秒）
-    Tensor   image;             // GPU / CPU tensor，含 IAllocator 管理的内存
+    int64_t  frame_id;         // 全局单调递增，用于重排序
+    int64_t  pts_us;           // 时间戳（微秒）
+    Tensor   image;            // GPU / CPU tensor，含 IAllocator 管理的内存
     std::vector<Detection> detections;  // 检测结果，由 DetectorNode 填充
-    std::vector<Track>     tracks;       // 追踪结果，由 TrackerNode 填充
+    std::vector<Track>     tracks;      // 追踪结果，由 TrackerNode 填充
     std::any               user_data;  // Python 业务节点附加数据，所有权归 Frame
 
     // 序列化钩子（预留，用于未来跨进程/跨机传输）
@@ -381,6 +410,60 @@ struct Frame {
 // - image.data 由 image.allocator 管理，Frame 析构时自动释放
 // - user_data 由 std::any 管理，Python 侧持有引用时需保证生命周期
 ```
+
+Detection 与 Track 结构：
+
+```cpp
+struct Detection {
+    float   bbox[4];           // [x1, y1, x2, y2]，归一化坐标 [0, 1]
+    int     class_id   = 0;    // 类别 ID；ClassifierNode 会覆盖为细粒度分类结果
+    float   confidence = 0.f;  // 置信度；ClassifierNode 会覆盖为分类概率
+    int64_t track_id   = -1;   // 关联轨迹 ID，-1 表示未追踪
+};
+
+struct Track {
+    int64_t track_id   = 0;
+    int     class_id   = 0;
+    float   bbox[4];
+    int     age        = 0;    // 轨迹存活帧数
+    float   confidence = 0.f;
+};
+```
+
+##### Tensor 内存类型
+
+```cpp
+struct Tensor {
+    std::vector<int64_t> shape;          // 如 {1, 3, 640, 640}（NCHW）
+    DataType             dtype;          // FLOAT32 / FLOAT16 / INT8 / UINT8
+    void*                data;           // 内存指针，由 allocator 管理
+    size_t               nbytes;
+    IAllocator*          allocator;      // 不拥有，弱引用
+};
+```
+
+| 内存类型 | `MemoryType` 枚举 | 分配器 | 典型用途 |
+|---|---|---|---|
+| CUDA 设备显存 | `CUDA_DEVICE` | `CudaAllocator` | 推理输入/输出 tensor，GPU 解码帧 |
+| CUDA Pinned 内存 | `CUDA_HOST` | `CudaPinnedAllocator` | H2D / D2H 中转，DMA 加速 |
+| CPU 普通内存 | `CPU` | `CpuAllocator`（256 字节对齐） | CPU 软解码帧，Python 侧数据 |
+
+跨节点传递 Tensor 时通过 `std::move` 转移所有权，**不触发内存拷贝**。若下游节点需要 CPU 数据（如 Python 读取），由该节点自行调用 `cudaMemcpy` D2H，不由框架自动转换。
+
+##### Frame 传递机制
+
+```
+上游节点 worker_loop                          下游节点 worker_loop
+─────────────────────────                    ─────────────────────────
+process(frame)                               pop_for(100ms) → frame_opt
+  │                                            │
+  ▼                                            ▼
+output_queue_->push(std::move(frame))  ←──  input_queue_ (同一个对象)
+```
+
+- Frame 通过 `std::move` 入队，**零拷贝**，大 tensor 不会被复制
+- `pop_for()` 返回 `std::optional<Frame>`，超时或队列停止时返回 `nullopt`
+- 节点间队列容量默认 16，溢出策略默认 `DROP_OLDEST`（实时流保低延迟）
 
 #### 5.2.4 BoundedQueue
 
@@ -1089,9 +1172,16 @@ public:
 - 实现的类/函数
   - class ClassifierNode : public InferNode（自动帧内 batch crop）
   - class ClassificationSoftmax
+- Frame 输出约定
+  - ClassifierNode 读取 `frame.detections`，对每个 detection 按 bbox 坐标从 `frame.image` 裁剪 crop
+  - 所有 crop 拼成 batch=N 一次推理（N = 当前帧 detections 数量）
+  - 推理完成后按 index 回写：`detections[i].class_id` ← 分类标签，`detections[i].confidence` ← softmax 最大概率
+  - 不新增 Frame 字段，不修改 `frame.image`，不修改 `detections[i].bbox`
+  - 若 `frame.detections` 为空，ClassifierNode 直接透传 Frame，不做任何推理
 - 验收标准
   - ResNet50 / EfficientNet-B0 / ShuffleNetV2 三个模型均完成 ONNX→TRT 转换并通过推理验证
   - 单帧 20 个 crop 打包成 batch=20 推理，吞吐 ≥ 单张循环推理 10×
+  - detections 为空时，Frame 原样透传，不触发推理
 - 测试方法
   - 集成测试，计时对比，三个模型分别验证
 
@@ -1288,9 +1378,9 @@ public:
 | T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [x] | T0.1 |
 | T0.3 | 日志系统初始化 | P0 | P0 | [x] | T0.1 |
 | T1.1 | 节点基类与 DAG | P1 | P0 | [x] | T0.2 |
-| T1.2 | PipelineManager + 生命周期 | P1 | P0 | [ ] | T1.1 |
-| T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [ ] | T0.2 |
-| T1.4 | parallel_workers 支持 | P1 | P0 | [ ] | T1.1 |
+| T1.2 | PipelineManager + 生命周期 | P1 | P0 | [x] | T1.1 |
+| T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [x] | T0.2 |
+| T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
 | T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [ ] | T1.3 |
 | T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 |
 | T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | P5 | P1 | [ ] | T2.2a、T5.1 |

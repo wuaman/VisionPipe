@@ -189,7 +189,7 @@ uv run pytest tests/unit/python/<test_file>.py -v
    
 2. 重新同步规范：
    ```bash
-   python .claude/skills/vp-auto-dev/scripts/sync_spec.py --force
+   python3 .claude/skills/vp-auto-dev/scripts/sync_spec.py --force
    ```
 
 3. **Git 提交**：询问用户是否进行 git commit
