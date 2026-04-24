@@ -6,6 +6,9 @@ set(VISIONPIPE_TEST_SOURCES
     unit/cpp/test_bounded_queue.cpp
     unit/cpp/test_logger.cpp
     unit/cpp/test_pipeline_dag.cpp
+    unit/cpp/test_pipeline_manager.cpp
+    unit/cpp/test_model_registry.cpp
+    unit/cpp/test_parallel_workers.cpp
 )
 
 add_executable(visionpipe_tests ${VISIONPIPE_TEST_SOURCES})

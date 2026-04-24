@@ -6,12 +6,13 @@ add_library(visionpipe_core STATIC
     logger.cpp
     node_base.cpp
     pipeline.cpp
+    pipeline_manager.cpp
+    model_registry.cpp
+    infer_node.cpp
     # 源文件将在后续任务中添加
     # frame.cpp (header-only)
     # bounded_queue.cpp (header-only)
     # tensor.cpp (header-only)
-    # pipeline_manager.cpp
-    # model_registry.cpp
 )
 
 target_include_directories(visionpipe_core

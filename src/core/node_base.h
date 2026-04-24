@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -76,7 +77,7 @@ public:
     virtual void stop(bool drain = true);
 
     /// @brief 等待节点完全停止
-    void wait_stop();
+    virtual void wait_stop();
 
     /// @brief 获取节点名称
     const std::string& name() const { return name_; }
@@ -145,6 +146,7 @@ protected:
 
     // 工作线程
     std::thread worker_thread_;
+    std::vector<std::thread> worker_threads_;
 
     // 统计计数器
     std::atomic<uint64_t> processed_count_{0};
@@ -158,6 +160,7 @@ protected:
     std::atomic<int64_t> last_frame_time_{0};
     std::atomic<uint64_t> frames_since_last_fps_{0};
     std::atomic<double> current_fps_{0.0};
+    std::mutex fps_mutex_;
 };
 
 /// @brief NodeBase 智能指针类型
