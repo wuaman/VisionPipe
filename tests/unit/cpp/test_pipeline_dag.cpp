@@ -160,6 +160,35 @@ TEST(NodeBaseTest, SetParam) {
     EXPECT_TRUE(filter.set_param("name", std::string("new_name")));
 }
 
+TEST(NodeBaseTest, FpsCalculationCorrect) {
+    // 以约 1000fps 运行 20 帧（每帧间隔 1ms）
+    // 修复前：elapsed = 1帧间隔 ≈ 1ms，fps = 10/0.001 ≈ 10000（10倍高估）
+    // 修复后：elapsed = 10帧窗口 ≈ 10ms，fps = 10/0.010 ≈ 1000（正确）
+    auto src = std::make_shared<MockSource>("fps_src", 20, 1000);  // 1ms/frame
+    auto filter = std::make_shared<MockFilter>("fps_filter", 0);
+    auto sink = std::make_shared<MockSink>("fps_sink");
+
+    PipelineBuilder builder;
+    NodePtr s = src, f = filter, k = sink;
+    builder >> s >> f >> k;
+
+    auto pipe = builder.build();
+    pipe->start();
+
+    while (src->state() != NodeState::STOPPED) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    pipe->stop(true);
+    pipe->wait_stop();
+
+    auto stats = pipe->get_node("fps_filter")->stats();
+    // fps 应在 200~5000 之间（允许系统调度抖动），但不应是 bug 产生的 ~10000+ 量级
+    if (stats.fps > 0.0) {
+        EXPECT_LT(stats.fps, 10000.0) << "fps=" << stats.fps << " suggests 10x overestimate bug";
+        EXPECT_GT(stats.fps, 100.0)   << "fps=" << stats.fps << " unreasonably low";
+    }
+}
+
 // ==================== Pipeline 基础测试 ====================
 
 TEST(PipelineTest, ConstructorBasic) {
@@ -282,11 +311,9 @@ TEST(PipelineDagTest, SourceFilterSinkChain) {
 
     // 验证帧都经过了 filter 处理（user_data = 42）
     for (const auto& f : frames) {
-        try {
-            EXPECT_EQ(std::any_cast<int>(f.user_data), 42);
-        } catch (...) {
-            // user_data 可能未设置（如果 filter 未处理）
-        }
+        ASSERT_TRUE(f.user_data.has_value())
+            << "frame " << f.frame_id << " was not processed by filter";
+        EXPECT_EQ(std::any_cast<int>(f.user_data), 42);
     }
 
     // 验证帧序号单调递增
@@ -347,9 +374,9 @@ TEST(PipelineDagTest, DrainingCompletesQueuedFrames) {
     pipe->stop(true);
     pipe->wait_stop();
 
-    // 所有已入队帧应被处理
+    // 源产生 50 帧，drain 后全部应到达 sink
     size_t after_count = sink->received_count();
-    EXPECT_GE(after_count, before_count);
+    EXPECT_EQ(after_count, static_cast<size_t>(50));
 }
 
 TEST(PipelineDagTest, MultiSinkFanOut) {

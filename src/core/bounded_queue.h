@@ -121,7 +121,7 @@ public:
     std::optional<T> pop() {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        if (stopped_ || queue_.empty()) {
+        if (queue_.empty()) {
             return std::nullopt;
         }
 

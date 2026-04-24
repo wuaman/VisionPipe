@@ -217,6 +217,33 @@ TEST_F(BoundedQueueTest, PopForSuccess) {
     pusher.join();
 }
 
+// ==================== Stop 后 drain 行为测试 ====================
+
+TEST_F(BoundedQueueTest, PopDrainsItemsAfterStop) {
+    BoundedQueue<int> queue(10);
+    queue.push(1);
+    queue.push(2);
+    queue.push(3);
+
+    queue.stop();
+
+    // stop 后队列中仍有数据，pop() 应正常返回
+    auto r1 = queue.pop();
+    ASSERT_TRUE(r1.has_value());
+    EXPECT_EQ(*r1, 1);
+
+    auto r2 = queue.pop();
+    ASSERT_TRUE(r2.has_value());
+    EXPECT_EQ(*r2, 2);
+
+    auto r3 = queue.pop();
+    ASSERT_TRUE(r3.has_value());
+    EXPECT_EQ(*r3, 3);
+
+    // 队列已空，返回 nullopt
+    EXPECT_FALSE(queue.pop().has_value());
+}
+
 // ==================== Stop/Reset 测试 ====================
 
 TEST_F(BoundedQueueTest, StopWakesBlockedThreads) {

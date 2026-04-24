@@ -154,19 +154,22 @@ bool NodeBase::process_frame(Frame& frame) {
         process(frame);
         ++processed_count_;
 
-        // 更新帧率
+        // 更新帧率：记录窗口起始时间，每 10 帧计算一次
         auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-        int64_t last = last_frame_time_.exchange(now);
         ++frames_since_last_fps_;
 
-        if (last > 0 && frames_since_last_fps_ >= 10) {
-            double elapsed_sec = static_cast<double>(now - last) / 1e9;
-            if (elapsed_sec > 0) {
-                double fps = frames_since_last_fps_.load() / elapsed_sec;
-                current_fps_ = fps;
-                frames_since_last_fps_ = 0;
-                last_frame_time_ = now;
+        int64_t zero = 0;
+        last_frame_time_.compare_exchange_strong(zero, now);  // 窗口首帧初始化
+
+        if (frames_since_last_fps_ >= 10) {
+            int64_t window_start = last_frame_time_.exchange(now);
+            if (window_start > 0) {
+                double elapsed_sec = static_cast<double>(now - window_start) / 1e9;
+                if (elapsed_sec > 0) {
+                    current_fps_ = frames_since_last_fps_.load() / elapsed_sec;
+                }
             }
+            frames_since_last_fps_ = 0;
         }
 
         return true;
