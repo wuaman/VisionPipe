@@ -69,6 +69,96 @@ python .claude/skills/vp-auto-dev/scripts/sync_spec.py
 
 然后编写代码实现。
 
+### Step 3.5: 独立测试编写 (Independent Test)
+
+**核心原则**：实现者不写测试。测试由独立 Agent 完成，该 Agent 只能看到**接口定义**和**规范**，不能看到实现细节。
+
+根据任务涉及的语言，派生对应的测试 Agent（可同时派生两个并行执行）：
+
+---
+
+#### C++ 测试 Agent
+
+```
+Agent(
+  description: "为 <任务ID> 编写 C++ 独立测试",
+  prompt: """
+你是一个独立测试工程师，负责为刚刚实现的 C++ 模块编写测试用例。
+
+## 你的信息来源（仅限以下内容）
+- 任务规范：<粘贴 06-schedule.md 中该任务的完整描述>
+- 验收标准：<粘贴任务的验收标准>
+- 头文件（接口）：<列出本任务涉及的所有 .h 文件路径，让 Agent 自行读取>
+
+## 你不能读取的文件
+- 任何 .cpp 实现文件（不要读，不要参考）
+
+## 测试要求
+对每个公开接口，必须覆盖：
+1. 正常路径（happy path）
+2. 边界值（空、零、最大容量、单元素）
+3. 错误/异常路径（非法参数、停止状态、重复操作）
+4. 状态转换序列（INIT→RUNNING→STOPPED 等）
+5. 并发场景（如适用）
+
+## 约束
+- 断言必须精确：用 EXPECT_EQ 而非 EXPECT_GE，除非确实允许范围
+- 禁止 catch(...) 吞异常：用 EXPECT_THROW 或 ASSERT_NO_THROW
+- 不要为了通过测试而降低断言强度
+
+## 输出
+将测试代码写入 tests/unit/cpp/ 下对应文件（追加或新建）。
+"""
+)
+```
+
+---
+
+#### Python 测试 Agent
+
+仅当任务涉及 Python 层（nanobind 绑定、Python DSL、管理 API）时派生：
+
+```
+Agent(
+  description: "为 <任务ID> 编写 Python 独立测试",
+  prompt: """
+你是一个独立测试工程师，负责为刚刚实现的 Python 模块编写测试用例。
+
+## 你的信息来源（仅限以下内容）
+- 任务规范：<粘贴 06-schedule.md 中该任务的完整描述>
+- 验收标准：<粘贴任务的验收标准>
+- Python 接口定义：<列出以下路径，让 Agent 自行读取>
+  - .pyi 类型存根文件（若存在）
+  - python/ 下各模块的 __init__.py（仅看导出符号，不看实现）
+  - nanobind 绑定的头文件 .h（了解暴露的 C++ 接口）
+
+## 你不能读取的文件
+- 任何 Python 实现文件（bind_*.cpp、具体业务逻辑 .py）
+- C++ .cpp 实现文件
+
+## 测试要求
+对每个公开接口，必须覆盖：
+1. 正常路径（happy path）
+2. 边界值（None、空列表、零值、极大值）
+3. 类型错误与参数错误（传错类型、缺少必填参数）
+4. 异常路径（操作顺序错误、资源未初始化时调用）
+5. Python ↔ C++ 异常穿透（VisionPipeError 子类能否正确传递到 Python 层）
+
+## 约束
+- 断言必须精确：用 assert result == expected，不用 assert result >= expected
+- 禁止裸 except 吞异常：用 pytest.raises(SpecificError)，不用 try/except: pass
+- 不要为了通过测试而降低断言强度
+
+## 输出
+将测试代码写入 tests/unit/python/ 下对应文件（追加或新建）。
+"""
+)
+```
+
+---
+
+两个 Agent 完成后，主 Agent **审查新增测试是否覆盖了边界和负面路径**，若覆盖不足则补充 prompt 让对应 Agent 继续完善。
+
 ### Step 4: 测试验证 (Test)
 
 VisionPipe-py 是 C++ + Python 混合项目，测试分两类：
