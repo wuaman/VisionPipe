@@ -26,6 +26,7 @@ target_include_directories(visionpipe_tests PRIVATE
 
 set(VISIONPIPE_INTEGRATION_TEST_SOURCES
     integration/cpp/test_trt_engine.cpp
+    integration/cpp/test_source_nodes.cpp
 )
 
 add_executable(visionpipe_integration_tests ${VISIONPIPE_INTEGRATION_TEST_SOURCES})
@@ -33,12 +34,15 @@ add_executable(visionpipe_integration_tests ${VISIONPIPE_INTEGRATION_TEST_SOURCE
 target_link_libraries(visionpipe_integration_tests
     PRIVATE
         visionpipe_hal
+        visionpipe_nodes
+        ${OpenCV_LIBS}
         GTest::gtest
         GTest::gtest_main
 )
 
 if(VISIONPIPE_USE_CUDA)
     target_include_directories(visionpipe_integration_tests PRIVATE ${CUDA_INCLUDE_DIRS})
+    target_compile_definitions(visionpipe_integration_tests PRIVATE VISIONPIPE_USE_CUDA)
 endif()
 
 target_include_directories(visionpipe_integration_tests PRIVATE

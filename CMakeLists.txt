@@ -30,7 +30,7 @@ if(VISIONPIPE_USE_TENSORRT)
     include("${CMAKE_SOURCE_DIR}/cmake/VisionPipeTensorRT.cmake")
 endif()
 
-find_package(OpenCV 4.7 REQUIRED COMPONENTS core imgproc imgcodecs videoio)
+find_package(OpenCV 4.7 REQUIRED COMPONENTS core imgproc imgcodecs videoio cudacodec)
 
 include(FetchContent)
 
@@ -63,6 +63,7 @@ endif()
 
 add_subdirectory(src/core)
 add_subdirectory(src/hal)
+add_subdirectory(src/nodes)
 
 if(VISIONPIPE_BUILD_TESTS)
     add_subdirectory(tests)

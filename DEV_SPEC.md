@@ -1382,7 +1382,7 @@ public:
 | T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [x] | T0.2 |
 | T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
 | T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [x] | T1.3 |
-| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 |
+| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [x] | T1.1 |
 | T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | P5 | P1 | [ ] | T2.2a、T5.1 |
 | T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2a |
 | T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 |
