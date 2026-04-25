@@ -1,14 +1,19 @@
 # VisionPipe HAL (Hardware Abstraction Layer)
 # 硬件抽象层：IModelEngine, IExecContext, IAllocator 接口及其 NVIDIA 实现
 
-add_library(visionpipe_hal STATIC
+set(VISIONPIPE_HAL_SOURCES
     stub.cpp
-    # 源文件将在后续任务中添加
-    # nvidia/trt_model_engine.cpp
-    # nvidia/trt_exec_context.cpp
-    # nvidia/cuda_allocator.cpp
-    # nvidia/nvdec_codec.cpp
 )
+
+if(VISIONPIPE_USE_CUDA AND VISIONPIPE_USE_TENSORRT)
+    list(APPEND VISIONPIPE_HAL_SOURCES
+        nvidia/cuda_allocator.cpp
+        nvidia/trt_model_engine.cpp
+        nvidia/trt_exec_context.cpp
+    )
+endif()
+
+add_library(visionpipe_hal STATIC ${VISIONPIPE_HAL_SOURCES})
 
 target_include_directories(visionpipe_hal
     PUBLIC
@@ -21,7 +26,6 @@ target_include_directories(visionpipe_hal
 target_link_libraries(visionpipe_hal
     PUBLIC
         visionpipe_core
-    PUBLIC
         spdlog::spdlog
         nlohmann_json::nlohmann_json
 )
@@ -29,6 +33,7 @@ target_link_libraries(visionpipe_hal
 # CUDA 支持
 if(VISIONPIPE_USE_CUDA)
     target_include_directories(visionpipe_hal PRIVATE ${CUDA_INCLUDE_DIRS})
+    target_link_libraries(visionpipe_hal PRIVATE ${CUDA_LIBRARIES} cudart)
     target_compile_definitions(visionpipe_hal PRIVATE VISIONPIPE_USE_CUDA)
 endif()
 

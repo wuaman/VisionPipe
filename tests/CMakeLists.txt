@@ -24,9 +24,35 @@ target_include_directories(visionpipe_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
+set(VISIONPIPE_INTEGRATION_TEST_SOURCES
+    integration/cpp/test_trt_engine.cpp
+)
+
+add_executable(visionpipe_integration_tests ${VISIONPIPE_INTEGRATION_TEST_SOURCES})
+
+target_link_libraries(visionpipe_integration_tests
+    PRIVATE
+        visionpipe_hal
+        GTest::gtest
+        GTest::gtest_main
+)
+
+if(VISIONPIPE_USE_CUDA)
+    target_include_directories(visionpipe_integration_tests PRIVATE ${CUDA_INCLUDE_DIRS})
+endif()
+
+target_include_directories(visionpipe_integration_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
 # 注册测试
 include(GoogleTest)
 gtest_discover_tests(visionpipe_tests
     PROPERTIES
         LABELS "unit"
+)
+
+gtest_discover_tests(visionpipe_integration_tests
+    PROPERTIES
+        LABELS "integration"
 )
