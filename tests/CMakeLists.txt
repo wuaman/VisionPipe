@@ -29,6 +29,13 @@ set(VISIONPIPE_INTEGRATION_TEST_SOURCES
     integration/cpp/test_source_nodes.cpp
 )
 
+# 添加推理节点测试
+if(VISIONPIPE_USE_CUDA AND VISIONPIPE_USE_TENSORRT)
+    list(APPEND VISIONPIPE_INTEGRATION_TEST_SOURCES
+        integration/cpp/test_detector_node.cpp
+    )
+endif()
+
 add_executable(visionpipe_integration_tests ${VISIONPIPE_INTEGRATION_TEST_SOURCES})
 
 target_link_libraries(visionpipe_integration_tests
@@ -43,6 +50,12 @@ target_link_libraries(visionpipe_integration_tests
 if(VISIONPIPE_USE_CUDA)
     target_include_directories(visionpipe_integration_tests PRIVATE ${CUDA_INCLUDE_DIRS})
     target_compile_definitions(visionpipe_integration_tests PRIVATE VISIONPIPE_USE_CUDA)
+endif()
+
+if(VISIONPIPE_USE_TENSORRT)
+    target_include_directories(visionpipe_integration_tests PRIVATE ${TensorRT_INCLUDE_DIRS})
+    target_link_libraries(visionpipe_integration_tests PRIVATE ${TensorRT_LIBRARIES})
+    target_compile_definitions(visionpipe_integration_tests PRIVATE VISIONPIPE_USE_TENSORRT)
 endif()
 
 target_include_directories(visionpipe_integration_tests PRIVATE

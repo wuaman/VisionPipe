@@ -1384,7 +1384,7 @@ public:
 | T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [x] | T1.3 |
 | T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [x] | T1.1 |
 | T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | P5 | P1 | [ ] | T2.2a、T5.1 |
-| T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2a |
+| T2.3 | YOLOv8 检测节点 | P2 | P0 | [x] | T2.1、T2.2a |
 | T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 |
 | T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 |
 | T3.1 | nanobind 绑定核心类 | P3 | P0 | [ ] | T2.3、T2.4 |
