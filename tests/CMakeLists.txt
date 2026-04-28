@@ -33,6 +33,7 @@ set(VISIONPIPE_INTEGRATION_TEST_SOURCES
 if(VISIONPIPE_USE_CUDA AND VISIONPIPE_USE_TENSORRT)
     list(APPEND VISIONPIPE_INTEGRATION_TEST_SOURCES
         integration/cpp/test_detector_node.cpp
+        integration/cpp/test_classifier_node.cpp
     )
 endif()
 

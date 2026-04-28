@@ -10,6 +10,7 @@ set(VISIONPIPE_NODES_SOURCES
 if(VISIONPIPE_USE_CUDA AND VISIONPIPE_USE_TENSORRT)
     list(APPEND VISIONPIPE_NODES_SOURCES
         infer/detector_node.cpp
+        infer/classifier_node.cpp
         infer/pre/letterbox_resize.cpp
         infer/post/detection_decoder.cpp
     )
