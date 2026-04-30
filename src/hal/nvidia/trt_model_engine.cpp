@@ -1,5 +1,6 @@
 #include "hal/nvidia/trt_model_engine.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <utility>
@@ -113,7 +114,8 @@ TrtModelEngine::TrtModelEngine(const std::string &engine_path)
   }
 
   int32_t input_count = 0;
-  int32_t output_count = 0;
+  state_->outputs.clear();
+
   for (int32_t i = 0; i < state_->engine->getNbIOTensors(); ++i) {
     const char *name = state_->engine->getIOTensorName(i);
     const auto binding = read_binding_info(*state_->engine, name);
@@ -121,19 +123,29 @@ TrtModelEngine::TrtModelEngine(const std::string &engine_path)
       ++input_count;
       state_->input = binding;
     } else {
-      ++output_count;
-      state_->output = binding;
+      state_->outputs.push_back(binding);
     }
   }
 
-  if (input_count != 1 || output_count != 1) {
+  if (input_count != 1) {
     throw ModelLoadError(
         engine_path,
-        "only single-input single-output TensorRT engines are supported");
+        "only single-input TensorRT engines are supported");
   }
 
+  if (state_->outputs.empty()) {
+    throw ModelLoadError(
+        engine_path,
+        "TensorRT engine has no outputs");
+  }
+
+  // 保持向后兼容：第一个输出也存储在 output 字段中
+  state_->output = state_->outputs[0];
+
   state_->has_dynamic_shapes =
-      state_->input.is_dynamic || state_->output.is_dynamic;
+      state_->input.is_dynamic ||
+      std::any_of(state_->outputs.begin(), state_->outputs.end(),
+                  [](const TrtBindingInfo& info) { return info.is_dynamic; });
 }
 
 std::unique_ptr<IExecContext> TrtModelEngine::create_context() {
@@ -151,6 +163,10 @@ size_t TrtModelEngine::device_memory_bytes() const {
 
   const int64_t bytes = state_->engine->getDeviceMemorySizeV2();
   return bytes > 0 ? static_cast<size_t>(bytes) : 0;
+}
+
+size_t TrtModelEngine::output_count() const {
+  return state_ ? state_->outputs.size() : 0;
 }
 
 } // namespace visionpipe

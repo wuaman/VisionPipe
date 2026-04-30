@@ -34,7 +34,8 @@ struct TrtSharedState {
   std::unique_ptr<nvinfer1::IRuntime, TrtRuntimeDeleter> runtime;
   std::unique_ptr<nvinfer1::ICudaEngine, TrtEngineDeleter> engine;
   TrtBindingInfo input;
-  TrtBindingInfo output;
+  TrtBindingInfo output;  // 保留用于单输出模型
+  std::vector<TrtBindingInfo> outputs;  // 支持多输出模型
   bool has_dynamic_shapes = false;
 };
 
@@ -45,6 +46,7 @@ public:
 
   std::unique_ptr<IExecContext> create_context() override;
   size_t device_memory_bytes() const override;
+  size_t output_count() const override;
 
 private:
   struct TrtLogger final : public nvinfer1::ILogger {

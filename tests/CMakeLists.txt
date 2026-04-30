@@ -9,6 +9,7 @@ set(VISIONPIPE_TEST_SOURCES
     unit/cpp/test_pipeline_manager.cpp
     unit/cpp/test_model_registry.cpp
     unit/cpp/test_parallel_workers.cpp
+    unit/cpp/test_bytetrack_node.cpp
 )
 
 add_executable(visionpipe_tests ${VISIONPIPE_TEST_SOURCES})
@@ -16,6 +17,7 @@ add_executable(visionpipe_tests ${VISIONPIPE_TEST_SOURCES})
 target_link_libraries(visionpipe_tests
     PRIVATE
         visionpipe_core
+        visionpipe_nodes
         GTest::gtest
         GTest::gtest_main
 )
@@ -34,6 +36,7 @@ if(VISIONPIPE_USE_CUDA AND VISIONPIPE_USE_TENSORRT)
     list(APPEND VISIONPIPE_INTEGRATION_TEST_SOURCES
         integration/cpp/test_detector_node.cpp
         integration/cpp/test_classifier_node.cpp
+        unit/cpp/test_segment_node.cpp
     )
 endif()
 

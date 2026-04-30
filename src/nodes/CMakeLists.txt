@@ -4,6 +4,7 @@
 set(VISIONPIPE_NODES_SOURCES
     source/file_source.cpp
     source/rtsp_source.cpp
+    tracker/bytetrack_node.cpp
 )
 
 # 添加推理节点源文件
@@ -11,8 +12,10 @@ if(VISIONPIPE_USE_CUDA AND VISIONPIPE_USE_TENSORRT)
     list(APPEND VISIONPIPE_NODES_SOURCES
         infer/detector_node.cpp
         infer/classifier_node.cpp
+        infer/segment_node.cpp
         infer/pre/letterbox_resize.cpp
         infer/post/detection_decoder.cpp
+        infer/post/seg_mask_decoder.cpp
     )
 endif()
 

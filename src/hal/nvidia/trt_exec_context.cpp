@@ -150,10 +150,10 @@ void TrtExecContext::validate_input(const Tensor &input) const {
   }
 }
 
-nvinfer1::Dims TrtExecContext::resolve_output_dims() const {
-  const auto dims = context_->getTensorShape(state_->output.name.c_str());
+nvinfer1::Dims TrtExecContext::resolve_output_dims(const std::string& output_name) const {
+  const auto dims = context_->getTensorShape(output_name.c_str());
   if (dims.nbDims < 0 || has_dynamic_dims(dims)) {
-    throw InferError("failed to resolve TensorRT output dimensions");
+    throw InferError("failed to resolve TensorRT output dimensions for " + output_name);
   }
   return dims;
 }
@@ -179,7 +179,7 @@ void TrtExecContext::infer(const Tensor &input, Tensor &output) {
     throw InferError("TensorRT shape inference failed");
   }
 
-  const auto output_dims = resolve_output_dims();
+  const auto output_dims = resolve_output_dims(state_->output.name);
   Tensor next_output(to_shape_vector(output_dims),
                      to_core_dtype(state_->output.data_type),
                      static_cast<IAllocator *>(state_->allocator.get()));
@@ -195,6 +195,51 @@ void TrtExecContext::infer(const Tensor &input, Tensor &output) {
 
   throw_cuda_error(cudaStreamSynchronize(stream_), "cudaStreamSynchronize");
   output = std::move(next_output);
+}
+
+void TrtExecContext::infer_multi(const Tensor &input, std::vector<Tensor> &outputs) {
+  validate_input(input);
+
+  if (state_->input.is_dynamic) {
+    const auto input_dims = to_trt_dims(input.shape);
+    if (!context_->setInputShape(state_->input.name.c_str(), input_dims)) {
+      throw InferError("failed to set TensorRT input shape to " +
+                       shape_to_string(input.shape));
+    }
+  }
+
+  if (!context_->setInputTensorAddress(state_->input.name.c_str(), input.data)) {
+    throw InferError("failed to bind TensorRT input tensor address");
+  }
+
+  const int32_t shape_status = context_->inferShapes(0, nullptr);
+  if (shape_status != 0) {
+    throw InferError("TensorRT shape inference failed");
+  }
+
+  // 为每个输出分配 tensor 并绑定地址
+  outputs.clear();
+  outputs.reserve(state_->outputs.size());
+
+  for (const auto &out_info : state_->outputs) {
+    const auto output_dims = resolve_output_dims(out_info.name);
+    Tensor out_tensor(to_shape_vector(output_dims),
+                      to_core_dtype(out_info.data_type),
+                      static_cast<IAllocator *>(state_->allocator.get()));
+
+    if (!context_->setTensorAddress(out_info.name.c_str(), out_tensor.data)) {
+      throw InferError("failed to bind TensorRT output tensor address for " +
+                       out_info.name);
+    }
+
+    outputs.push_back(std::move(out_tensor));
+  }
+
+  if (!context_->enqueueV3(stream_)) {
+    throw InferError("TensorRT enqueueV3 failed");
+  }
+
+  throw_cuda_error(cudaStreamSynchronize(stream_), "cudaStreamSynchronize");
 }
 
 } // namespace visionpipe

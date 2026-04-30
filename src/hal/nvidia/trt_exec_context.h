@@ -18,6 +18,8 @@ public:
 
   void infer(const Tensor &input, Tensor &output) override;
 
+  void infer_multi(const Tensor &input, std::vector<Tensor> &outputs) override;
+
 private:
   struct ContextDeleter {
     void operator()(nvinfer1::IExecutionContext *context) const noexcept;
@@ -27,7 +29,7 @@ private:
   static std::vector<int64_t> to_shape_vector(const nvinfer1::Dims &dims);
   static bool has_dynamic_dims(const nvinfer1::Dims &dims);
   void validate_input(const Tensor &input) const;
-  nvinfer1::Dims resolve_output_dims() const;
+  nvinfer1::Dims resolve_output_dims(const std::string& output_name) const;
 
   std::shared_ptr<TrtSharedState> state_;
   std::unique_ptr<nvinfer1::IExecutionContext, ContextDeleter> context_;
