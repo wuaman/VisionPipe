@@ -1,0 +1,26 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default (uv venv Python)",
+      "description": "使用项目根目录 .venv 的 Python（uv venv 创建）",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "Python_EXECUTABLE": "${sourceDir}/.venv/bin/python"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    }
+  ]
+}
