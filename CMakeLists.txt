@@ -9,6 +9,7 @@ project(VisionPipe
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
@@ -70,8 +71,8 @@ if(VISIONPIPE_BUILD_TESTS)
 endif()
 
 if(VISIONPIPE_BUILD_PYTHON)
-    # nanobind 在 Linux 上通过 Python_INCLUDE_DIRS 添加 Python.h；必须在加载 nanobind-config 前完成 Development 组件解析。
-    find_package(Python 3.8 REQUIRED COMPONENTS Interpreter Development.Module Development.SABIModule)
+    # 某些发行版不提供 Development.SABIModule，当前先使用常规 Module 头文件构建绑定。
+    find_package(Python 3.8 REQUIRED COMPONENTS Interpreter Development.Module)
     if(NOT Python_INCLUDE_DIRS AND DEFINED Python_INCLUDE_DIR)
         set(Python_INCLUDE_DIRS "${Python_INCLUDE_DIR}")
     endif()
