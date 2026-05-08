@@ -4,7 +4,12 @@
 
 #include "core/logger.h"
 
+#include <cstring>
+
+#include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
+
+#include "core/tensor.h"
 
 #ifdef VISIONPIPE_USE_CUDA
 #include <cuda_runtime.h>
@@ -176,6 +181,9 @@ void FileSource::source_worker_loop() {
   }
 
   state_ = NodeState::STOPPED;
+  if (output_queue_) {
+    output_queue_->stop();
+  }
   VP_LOG_INFO("FileSource '{}' stopped, total frames: {}", name_,
               current_frame_.load());
 }
@@ -288,7 +296,17 @@ bool FileSource::read_frame_cpu(Frame &frame) {
     frame.pts_us =
         static_cast<int64_t>(cpu_capture_->get(cv::CAP_PROP_POS_MSEC) * 1000);
 
-    // TODO: 实现从 cv::Mat 到 Tensor 的转换
+    // BGR (OpenCV default) → RGB, HWC uint8 Tensor
+    cv::Mat rgb;
+    cv::cvtColor(cpu_frame, rgb, cv::COLOR_BGR2RGB);
+
+    static CpuAllocator cpu_alloc;
+    const int h = rgb.rows, w = rgb.cols, c = rgb.channels();
+    frame.image = Tensor({static_cast<int64_t>(h),
+                          static_cast<int64_t>(w),
+                          static_cast<int64_t>(c)},
+                         DataType::UINT8, &cpu_alloc);
+    std::memcpy(frame.image.data, rgb.data, frame.image.nbytes);
 
     return true;
   } catch (const cv::Exception &e) {

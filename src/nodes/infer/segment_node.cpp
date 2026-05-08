@@ -55,11 +55,18 @@ SegmentNode::~SegmentNode() {
 }
 
 void SegmentNode::start() {
-    if (state_ == NodeState::RUNNING) {
-        return;
+    std::lock_guard<std::mutex> lk(lifecycle_mutex_);
+
+    NodeState expected = NodeState::INIT;
+    if (!state_.compare_exchange_strong(expected, NodeState::RUNNING)) {
+        expected = NodeState::STOPPED;
+        if (!state_.compare_exchange_strong(expected, NodeState::RUNNING)) {
+            return;  // 已在 RUNNING 或 DRAINING，忽略
+        }
     }
 
     if (!input_queue_) {
+        state_ = NodeState::INIT;
         throw ConfigError("SegmentNode requires an input queue");
     }
 
@@ -90,7 +97,26 @@ void SegmentNode::start() {
     }
     in_flight_frames_ = 0;
 
-    state_ = NodeState::RUNNING;
+    // 确保之前的 worker 线程已退出
+    for (auto& worker : worker_threads_) {
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+    worker_threads_.clear();
+
+    // 重启时重置队列（stop 会 stop 它们）
+    if (owned_input_queue_) {
+        owned_input_queue_->reset();
+        // 只在未被外部替换时才使用内部队列
+        if (input_queue_ == nullptr || input_queue_ == owned_input_queue_.get()) {
+            input_queue_ = owned_input_queue_.get();
+        }
+    }
+    if (output_queue_) {
+        output_queue_->reset();
+    }
+
     on_init();
 
     // 启动 worker 线程
@@ -104,9 +130,14 @@ void SegmentNode::start() {
 }
 
 void SegmentNode::stop(bool drain) {
+    std::lock_guard<std::mutex> lk(lifecycle_mutex_);
     NodeState expected = NodeState::RUNNING;
     if (!state_.compare_exchange_strong(expected, NodeState::DRAINING)) {
-        if (state_ == NodeState::INIT || state_ == NodeState::STOPPED) {
+        if (state_ == NodeState::INIT) {
+            state_ = NodeState::STOPPED;
+            return;
+        }
+        if (state_ == NodeState::STOPPED) {
             return;
         }
     }
@@ -119,12 +150,18 @@ void SegmentNode::stop(bool drain) {
         if (output_queue_) {
             output_queue_->stop();
         }
+    } else {
+        // drain 模式：停止输入队列，让 worker 处理完已有帧后退出
+        if (input_queue_) {
+            input_queue_->stop();
+        }
     }
 
     on_stop();
 }
 
 void SegmentNode::wait_stop() {
+    std::lock_guard<std::mutex> lk(lifecycle_mutex_);
     for (auto& worker : worker_threads_) {
         if (worker.joinable()) {
             worker.join();
@@ -174,7 +211,7 @@ bool SegmentNode::set_param(const std::string& name, const ParamValue& value) {
         return false;
     }
 
-    return NodeBase::set_param(name, value);
+    return false;
 }
 
 void SegmentNode::worker_loop(size_t worker_index) {
@@ -183,7 +220,7 @@ void SegmentNode::worker_loop(size_t worker_index) {
     while (!should_worker_exit()) {
         auto frame_opt = input_queue_->pop_for(std::chrono::milliseconds(100));
         if (!frame_opt.has_value()) {
-            if (state_ == NodeState::DRAINING && input_queue_->empty()) {
+            if (input_queue_->stopped_and_empty()) {
                 break;
             }
             continue;
@@ -265,7 +302,7 @@ void SegmentNode::worker_loop(size_t worker_index) {
     {
         std::lock_guard<std::mutex> lock(reorder_mutex_);
         emit_ready_frames_locked();
-        if (state_ == NodeState::DRAINING && input_queue_ && input_queue_->empty() &&
+        if (input_queue_ && input_queue_->stopped_and_empty() &&
             pending_outputs_.empty() && in_flight_frames_.load(std::memory_order_relaxed) == 0) {
             state_ = NodeState::STOPPED;
             if (output_queue_) {
@@ -417,7 +454,7 @@ bool SegmentNode::should_worker_exit() const {
     if (state_ == NodeState::STOPPED) {
         return true;
     }
-    if (state_ == NodeState::DRAINING && input_queue_ && input_queue_->empty()) {
+    if (state_ == NodeState::DRAINING && input_queue_ && input_queue_->stopped_and_empty()) {
         std::lock_guard<std::mutex> lock(reorder_mutex_);
         return pending_outputs_.empty() && in_flight_frames_.load(std::memory_order_relaxed) == 0;
     }

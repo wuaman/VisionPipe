@@ -191,6 +191,17 @@ public:
         return queue_.empty();
     }
 
+    /// @brief 队列是否已停止
+    bool is_stopped() const {
+        return stopped_.load(std::memory_order_acquire);
+    }
+
+    /// @brief 队列是否已停止且为空（drain 完毕的判断条件）
+    bool stopped_and_empty() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return stopped_ && queue_.empty();
+    }
+
     /// @brief 获取当前元素数量
     size_t size() const {
         std::lock_guard<std::mutex> lock(mutex_);

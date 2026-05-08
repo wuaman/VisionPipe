@@ -133,10 +133,10 @@ Frame make_seg_frame(int64_t frame_id, int width = 640, int height = 480) {
     frame.frame_id = frame_id;
     frame.pts_us = frame_id * 33333;  // ~30fps
 
-    // 创建一个简单的 RGB 图像 tensor (CHW 格式)
-    frame.image = Tensor({1, 3, height, width}, DataType::FLOAT32, &allocator);
-    float* data = static_cast<float*>(frame.image.data);
-    std::fill(data, data + frame.image.numel(), 0.5f);
+    // HWC 格式 {H, W, 3}，与 preprocess CPU 分支匹配
+    frame.image = Tensor({static_cast<size_t>(height), static_cast<size_t>(width), 3},
+                         DataType::UINT8, &allocator);
+    std::memset(frame.image.data, 128, frame.image.nbytes);
 
     return frame;
 }
@@ -292,14 +292,7 @@ TEST_F(SegmentNodeConstructorTest, ConstructionWithNameOnly) {
 
 TEST_F(SegmentNodeConstructorTest, NullEngineThrows) {
     std::shared_ptr<IModelEngine> null_engine;
-
-    // 根据 SegmentNode 设计，null engine 可能导致后续调用崩溃
-    // 这里验证构造行为（可能需要根据实际实现调整）
-    // 如果构造允许 null engine，则此测试应调整
-    EXPECT_NO_THROW({
-        SegmentNode node(null_engine);
-        // 但后续使用可能有问题
-    });
+    EXPECT_THROW({ SegmentNode node(null_engine); }, ConfigError);
 }
 
 TEST_F(SegmentNodeConstructorTest, CannotMoveDueToMutex) {
@@ -823,10 +816,12 @@ TEST_F(SegmentNodeQueueTest, CreateOutputQueue) {
 }
 
 TEST_F(SegmentNodeQueueTest, SetInputQueue) {
-    BoundedQueue<Frame> input_queue(16);
-    node_->set_input_queue(&input_queue);
+    auto input_queue = std::make_shared<BoundedQueue<Frame>>(16);
+    node_->set_input_queue(input_queue.get());
 
-    EXPECT_EQ(node_->input_queue(), &input_queue);
+    EXPECT_EQ(node_->input_queue(), input_queue.get());
+    // 恢复内部队列，防止 TearDown 通过悬空指针访问已析构的局部变量
+    node_->set_input_queue(nullptr);
 }
 
 TEST_F(SegmentNodeQueueTest, IsSourceReturnsFalse) {

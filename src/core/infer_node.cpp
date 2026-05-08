@@ -101,6 +101,10 @@ void InferNode::stop(bool drain) {
         if (output_queue_) {
             output_queue_->stop();
         }
+    } else {
+        if (input_queue_) {
+            input_queue_->stop();
+        }
     }
 
     on_stop();
@@ -122,7 +126,7 @@ void InferNode::worker_loop(size_t worker_index) {
     while (!should_worker_exit()) {
         auto frame_opt = input_queue_->pop_for(std::chrono::milliseconds(100));
         if (!frame_opt.has_value()) {
-            if (state_ == NodeState::DRAINING && input_queue_->empty()) {
+            if (input_queue_->stopped_and_empty()) {
                 break;
             }
             continue;
@@ -177,7 +181,7 @@ void InferNode::worker_loop(size_t worker_index) {
     {
         std::lock_guard<std::mutex> lock(reorder_mutex_);
         emit_ready_frames_locked();
-        if (state_ == NodeState::DRAINING && input_queue_ && input_queue_->empty() &&
+        if (input_queue_ && input_queue_->stopped_and_empty() &&
             pending_outputs_.empty() && in_flight_frames_.load(std::memory_order_relaxed) == 0) {
             state_ = NodeState::STOPPED;
             if (output_queue_) {
@@ -206,7 +210,7 @@ bool InferNode::should_worker_exit() const {
     if (state_ == NodeState::STOPPED) {
         return true;
     }
-    if (state_ == NodeState::DRAINING && input_queue_ && input_queue_->empty()) {
+    if (state_ == NodeState::DRAINING && input_queue_ && input_queue_->stopped_and_empty()) {
         std::lock_guard<std::mutex> lock(reorder_mutex_);
         return pending_outputs_.empty() && in_flight_frames_.load(std::memory_order_relaxed) == 0;
     }

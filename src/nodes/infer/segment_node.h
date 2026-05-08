@@ -107,6 +107,9 @@ private:
     // 拥有的输入队列
     std::shared_ptr<BoundedQueue<Frame>> owned_input_queue_;
 
+    // 保护 start/stop/wait_stop 的并发访问
+    mutable std::mutex lifecycle_mutex_;
+
     // 帧重排序
     mutable std::mutex reorder_mutex_;
     std::unordered_map<int64_t, Frame> pending_outputs_;
