@@ -56,6 +56,7 @@ Frame = _ext.Frame
 
 IModelEngine = _ext.IModelEngine
 MockModelEngine = _ext.MockModelEngine
+TrtModelEngine = _ext.TrtModelEngine
 NodeBase = _ext.NodeBase
 FileSource = _ext.FileSource
 RtspSource = _ext.RtspSource
@@ -109,6 +110,7 @@ __all__ = [
     "Frame",
     "IModelEngine",
     "MockModelEngine",
+    "TrtModelEngine",
     "NodeBase",
     "FileSource",
     "RtspSource",

@@ -1,12 +1,15 @@
 #include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
 #include <array>
+#include <stdexcept>
 
 #include "bindings.h"
+#include "core/tensor.h"
 #include "core/frame.h"
 #include "core/node_base.h"
 #include "core/pipeline.h"
@@ -21,6 +24,25 @@ namespace nb = nanobind;
 using namespace visionpipe;
 
 namespace {
+
+nb::ndarray<nb::numpy, uint8_t, nb::ndim<3>> frame_image_numpy(const Frame& frame) {
+    if (!frame.has_image()) {
+        throw std::runtime_error("Frame has no image");
+    }
+    const Tensor& t = frame.image;
+    if (t.memory_type() != MemoryType::CPU) {
+        throw std::runtime_error("image_numpy() only supports CPU tensors");
+    }
+    if (t.shape.size() != 3) {
+        throw std::runtime_error("image_numpy() expects HWC tensor (ndim=3)");
+    }
+    size_t h = t.shape[0], w = t.shape[1], c = t.shape[2];
+    return nb::ndarray<nb::numpy, uint8_t, nb::ndim<3>>(
+        static_cast<uint8_t*>(t.data),
+        {h, w, c},
+        nb::handle()
+    );
+}
 
 std::array<float, 4> get_detection_bbox(const Detection& detection) {
     return {detection.bbox[0], detection.bbox[1], detection.bbox[2], detection.bbox[3]};
@@ -151,5 +173,6 @@ void bind_frame(nb::module_& m) {
         .def_rw("detections", &Frame::detections)
         .def_rw("tracks", &Frame::tracks)
         .def("clear", &Frame::clear)
-        .def("has_image", &Frame::has_image);
+        .def("has_image", &Frame::has_image)
+        .def("image_numpy", &frame_image_numpy);
 }

@@ -3,9 +3,14 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <chrono>
+#include <optional>
+
 #include "bindings.h"
+#include "core/frame.h"
 #include "core/node_base.h"
 #include "hal/imodel_engine.h"
+#include "hal/nvidia/trt_model_engine.h"
 #include "nodes/source/file_source.h"
 #include "nodes/source/rtsp_source.h"
 #include "nodes/tracker/bytetrack_node.h"
@@ -24,6 +29,11 @@ void bind_nodes(nb::module_& m) {
     nb::class_<MockModelEngine, IModelEngine>(m, "MockModelEngine")
         .def(nb::init<>());
 
+    nb::class_<TrtModelEngine, IModelEngine>(m, "TrtModelEngine")
+        .def(nb::init<const std::string&>(), nb::arg("engine_path"))
+        .def("device_memory_bytes", &TrtModelEngine::device_memory_bytes)
+        .def("output_count", &TrtModelEngine::output_count);
+
     nb::class_<NodeBase>(m, "NodeBase")
         .def("name", &NodeBase::name, nb::rv_policy::reference_internal)
         .def("state", &NodeBase::state)
@@ -32,7 +42,14 @@ void bind_nodes(nb::module_& m) {
         .def("wait_stop", &NodeBase::wait_stop)
         .def("stats", &NodeBase::stats)
         .def("is_source", &NodeBase::is_source)
-        .def("is_sink", &NodeBase::is_sink);
+        .def("is_sink", &NodeBase::is_sink)
+        .def("pop_frame", [](NodeBase& node, int timeout_ms) -> nb::object {
+            auto q = node.output_queue();
+            if (!q) return nb::none();
+            auto result = q->pop_for(std::chrono::milliseconds(timeout_ms));
+            if (!result.has_value()) return nb::none();
+            return nb::cast(std::move(*result));
+        }, nb::arg("timeout_ms") = 500);
 
     nb::class_<FileSource, NodeBase>(m, "FileSource")
         .def(nb::init<const SourceConfig&>(), nb::arg("config"))
