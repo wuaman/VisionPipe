@@ -14,6 +14,10 @@
 
 namespace visionpipe {
 
+/// @brief 推理节点基类
+///
+/// 提供并行 worker 线程管理、帧重排序、drain 传播等通用推理基础设施。
+/// 子类只需实现 infer_frame()，将 pre+infer+post 逻辑封装在其中。
 class InferNode : public NodeBase {
 public:
     explicit InferNode(std::shared_ptr<IModelEngine> engine,
@@ -28,14 +32,22 @@ public:
 
     size_t worker_count() const { return workers_; }
 
+protected:
+    /// @brief 每帧推理入口，由 worker 线程调用
+    ///
+    /// 子类在此方法中执行完整的 preprocess → infer → postprocess 流程。
+    /// 抛出异常时，InferNode 会增加 error_count_ 并记录日志，帧被丢弃。
+    virtual void infer_frame(IExecContext& ctx, Frame& frame) = 0;
+
+    std::shared_ptr<IModelEngine> engine_;
+    size_t workers_;
+    std::vector<std::unique_ptr<IExecContext>> contexts_;
+
 private:
     void worker_loop(size_t worker_index);
     void emit_ready_frames_locked();
     bool should_worker_exit() const;
 
-    std::shared_ptr<IModelEngine> engine_;
-    size_t workers_;
-    std::vector<std::unique_ptr<IExecContext>> contexts_;
     std::shared_ptr<BoundedQueue<Frame>> owned_input_queue_;
 
     mutable std::mutex reorder_mutex_;

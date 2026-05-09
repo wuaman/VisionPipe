@@ -35,9 +35,7 @@ void InferNode::process(Frame& frame) {
     if (contexts_.empty()) {
         throw InferError("InferNode is not started");
     }
-
-    Tensor output;
-    contexts_.front()->infer(frame.image, output);
+    infer_frame(*contexts_.front(), frame);
 }
 
 void InferNode::start() {
@@ -143,8 +141,7 @@ void InferNode::worker_loop(size_t worker_index) {
         }
 
         try {
-            Tensor output;
-            context->infer(frame.image, output);
+            infer_frame(*context, frame);
             ++processed_count_;
 
             const auto now = std::chrono::steady_clock::now().time_since_epoch().count();

@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-#include "core/node_base.h"
+#include "core/infer_node.h"
 #include "core/frame.h"
 #include "hal/imodel_engine.h"
 #include "nodes/infer/post/seg_mask_decoder.h"
@@ -28,15 +28,9 @@ struct SegmentConfig {
 /// 2. TensorRT 推理（双输出：检测 + 原型掩码）
 /// 3. NMS 后处理
 /// 4. Mask 解码和裁剪
-///
-/// 读取 frame.image，写入 frame.detections。
-/// 分割掩码存储在用户可通过 detections 索引访问的位置。
-class SegmentNode : public NodeBase {
+class SegmentNode : public InferNode {
 public:
     /// @brief 构造函数
-    /// @param engine TensorRT 模型引擎
-    /// @param config 分割配置
-    /// @param name 节点名称
     explicit SegmentNode(std::shared_ptr<IModelEngine> engine,
                          const SegmentConfig& config = SegmentConfig(),
                          const std::string& name = "segment");
@@ -45,28 +39,13 @@ public:
     explicit SegmentNode(std::shared_ptr<IModelEngine> engine,
                          const std::string& name);
 
-    /// @brief 析构函数
-    ~SegmentNode() override;
+    ~SegmentNode() override = default;
 
-    // 禁止拷贝
+    // 禁止拷贝和移动（包含 mutex 成员）
     SegmentNode(const SegmentNode&) = delete;
     SegmentNode& operator=(const SegmentNode&) = delete;
-
-    // 禁止移动（包含 mutex 和 atomic 成员）
     SegmentNode(SegmentNode&&) = delete;
     SegmentNode& operator=(SegmentNode&&) = delete;
-
-    /// @brief 处理帧
-    void process(Frame& frame) override;
-
-    /// @brief 启动节点
-    void start() override;
-
-    /// @brief 停止节点
-    void stop(bool drain = true) override;
-
-    /// @brief 等待停止完成
-    void wait_stop() override;
 
     /// @brief 设置参数（支持热更新）
     bool set_param(const std::string& name, const ParamValue& value) override;
@@ -74,50 +53,21 @@ public:
     /// @brief 获取配置
     const SegmentConfig& config() const { return config_; }
 
-    /// @brief 获取 worker 数量
-    size_t worker_count() const { return workers_; }
-
     /// @brief 获取最近一帧的分割掩码
     const std::vector<std::vector<uint8_t>>& last_masks() const { return last_masks_; }
 
-private:
-    /// @brief worker 线程主循环
-    void worker_loop(size_t worker_index);
+protected:
+    void infer_frame(IExecContext& ctx, Frame& frame) override;
 
-    /// @brief 预处理图像
+private:
     LetterboxParams preprocess(Frame& frame, Tensor& input_tensor);
 
-    /// @brief 后处理推理结果
     void postprocess(Frame& frame, const Tensor& det_output,
                      const Tensor& proto_output,
                      const LetterboxParams& letterbox_params,
                      int orig_width, int orig_height);
 
-    /// @brief 检查 worker 是否应该退出
-    bool should_worker_exit() const;
-
-    /// @brief 发射已准备好的帧（按顺序）
-    void emit_ready_frames_locked();
-
-    std::shared_ptr<IModelEngine> engine_;
     SegmentConfig config_;
-    size_t workers_;
-    std::vector<std::unique_ptr<IExecContext>> contexts_;
-
-    // 拥有的输入队列
-    std::shared_ptr<BoundedQueue<Frame>> owned_input_queue_;
-
-    // 保护 start/stop/wait_stop 的并发访问
-    mutable std::mutex lifecycle_mutex_;
-
-    // 帧重排序
-    mutable std::mutex reorder_mutex_;
-    std::unordered_map<int64_t, Frame> pending_outputs_;
-    int64_t next_output_frame_id_ = 0;
-    bool next_output_initialized_ = false;
-    std::atomic<size_t> in_flight_frames_{0};
-
-    // 最近一帧的分割掩码
     std::vector<std::vector<uint8_t>> last_masks_;
     mutable std::mutex masks_mutex_;
 };

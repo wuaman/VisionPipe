@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-#include "core/node_base.h"
+#include "core/infer_node.h"
 #include "core/frame.h"
 #include "nodes/infer/pre/letterbox_resize.h"
 #include "nodes/infer/post/detection_decoder.h"
@@ -28,7 +28,7 @@ struct DetectorConfig {
 /// 2. TensorRT 推理
 /// 3. NMS 后处理
 /// 4. 坐标映射回原图空间
-class DetectorNode : public NodeBase {
+class DetectorNode : public InferNode {
 public:
     /// @brief 构造函数
     /// @param engine TensorRT 模型引擎
@@ -44,8 +44,7 @@ public:
     explicit DetectorNode(std::shared_ptr<IModelEngine> engine,
                           const std::string& name);
 
-    /// @brief 析构函数
-    ~DetectorNode() override;
+    ~DetectorNode() override = default;
 
     // 禁止拷贝
     DetectorNode(const DetectorNode&) = delete;
@@ -55,23 +54,7 @@ public:
     DetectorNode(DetectorNode&&) noexcept = default;
     DetectorNode& operator=(DetectorNode&&) noexcept = default;
 
-    /// @brief 处理帧
-    /// @param frame 输入帧
-    void process(Frame& frame) override;
-
-    /// @brief 启动节点
-    void start() override;
-
-    /// @brief 停止节点
-    void stop(bool drain = true) override;
-
-    /// @brief 等待停止完成
-    void wait_stop() override;
-
     /// @brief 设置参数（支持热更新）
-    /// @param name 参数名称
-    /// @param value 参数值
-    /// @return 是否成功设置
     bool set_param(const std::string& name, const ParamValue& value) override;
 
     /// @brief 获取配置
@@ -79,31 +62,19 @@ public:
 
     /// @brief 设置 ROI（感兴趣区域）
     /// @param polygons ROI 多边形顶点列表，坐标归一化到 [0, 1]
-    /// @note 只输出 ROI 内的检测结果
     void set_roi(const std::vector<std::vector<float>>& polygons);
 
     /// @brief 清除 ROI
     void clear_roi();
 
-    /// @brief 获取 worker 数量
-    size_t worker_count() const { return workers_; }
+protected:
+    void infer_frame(IExecContext& ctx, Frame& frame) override;
 
 private:
-    /// @brief worker 线程主循环
-    void worker_loop(size_t worker_index);
-
     /// @brief 预处理图像
-    /// @param frame 输入帧
-    /// @param input_tensor 输出预处理后的 tensor
-    /// @return Letterbox 参数
     LetterboxParams preprocess(Frame& frame, Tensor& input_tensor);
 
     /// @brief 后处理推理结果
-    /// @param frame 输入帧（会被更新）
-    /// @param output 推理输出 tensor
-    /// @param letterbox_params letterbox 参数
-    /// @param orig_width 原图宽度
-    /// @param orig_height 原图高度
     void postprocess(Frame& frame, const Tensor& output,
                      const LetterboxParams& letterbox_params,
                      int orig_width, int orig_height);
@@ -111,30 +82,9 @@ private:
     /// @brief 检查检测结果是否在 ROI 内
     bool is_in_roi(const Detection& det) const;
 
-    /// @brief 检查 worker 是否应该退出
-    bool should_worker_exit() const;
-
-    /// @brief 发射已准备好的帧（按顺序）
-    void emit_ready_frames_locked();
-
-    std::shared_ptr<IModelEngine> engine_;
     DetectorConfig config_;
-    size_t workers_;
-    std::vector<std::unique_ptr<IExecContext>> contexts_;
-
-    // 拥有的输入队列
-    std::shared_ptr<BoundedQueue<Frame>> owned_input_queue_;
-
-    // 帧重排序
-    mutable std::mutex reorder_mutex_;
-    std::unordered_map<int64_t, Frame> pending_outputs_;
-    int64_t next_output_frame_id_ = 0;
-    bool next_output_initialized_ = false;
-    std::atomic<size_t> in_flight_frames_{0};
-
-    // ROI 多边形（归一化坐标）
     std::vector<std::vector<cv::Point2f>> roi_polygons_;
-    std::mutex roi_mutex_;
+    mutable std::mutex roi_mutex_;
 };
 
 /// @brief DetectorNode 智能指针类型
