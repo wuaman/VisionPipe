@@ -2,6 +2,7 @@
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
+#include <nanobind/stl/optional.h>
 
 #include <chrono>
 #include <optional>
@@ -18,6 +19,8 @@
 #include "nodes/infer/detector_node.h"
 #include "nodes/infer/classifier_node.h"
 #include "nodes/infer/segment_node.h"
+#include "nodes/sink/json_result_sink.h"
+#include "nodes/sink/mjpeg_sink.h"
 
 namespace nb = nanobind;
 using namespace visionpipe;
@@ -120,4 +123,38 @@ void bind_nodes(nb::module_& m) {
         .def("config", &SegmentNode::config, nb::rv_policy::reference_internal)
         .def("worker_count", &SegmentNode::worker_count)
         .def("last_masks", &SegmentNode::last_masks, nb::rv_policy::reference_internal);
+
+    nb::class_<JsonResultSinkConfig>(m, "JsonResultSinkConfig")
+        .def(nb::init<>())
+        .def_rw("buffer_capacity", &JsonResultSinkConfig::buffer_capacity)
+        .def_rw("include_detections", &JsonResultSinkConfig::include_detections)
+        .def_rw("include_tracks", &JsonResultSinkConfig::include_tracks);
+
+    nb::class_<JsonResultSink, NodeBase>(m, "JsonResultSink")
+        .def(nb::init<const JsonResultSinkConfig&, const std::string&>(),
+             nb::arg("config") = JsonResultSinkConfig(),
+             nb::arg("name") = "json_result_sink")
+        .def("config", &JsonResultSink::config, nb::rv_policy::reference_internal)
+        .def("pop_json", [](JsonResultSink& sink, int timeout_ms) -> nb::object {
+            auto result = sink.pop_json(std::chrono::milliseconds(timeout_ms));
+            if (!result.has_value()) return nb::none();
+            return nb::cast(std::move(*result));
+        }, nb::arg("timeout_ms") = 500);
+
+    nb::class_<MjpegSinkConfig>(m, "MjpegSinkConfig")
+        .def(nb::init<>())
+        .def_rw("jpeg_quality", &MjpegSinkConfig::jpeg_quality)
+        .def_rw("buffer_capacity", &MjpegSinkConfig::buffer_capacity);
+
+    nb::class_<MjpegSink, NodeBase>(m, "MjpegSink")
+        .def(nb::init<const MjpegSinkConfig&, const std::string&>(),
+             nb::arg("config") = MjpegSinkConfig(),
+             nb::arg("name") = "mjpeg_sink")
+        .def("config", &MjpegSink::config, nb::rv_policy::reference_internal)
+        .def("pop_jpeg", [](MjpegSink& sink, int timeout_ms) -> nb::object {
+            auto result = sink.pop_jpeg(std::chrono::milliseconds(timeout_ms));
+            if (!result.has_value()) return nb::none();
+            return nb::cast(nb::bytes(
+                reinterpret_cast<const char*>(result->data()), result->size()));
+        }, nb::arg("timeout_ms") = 500);
 }

@@ -1393,7 +1393,7 @@ public:
 | T4.1 | 内嵌管理 REST API | P4 | P0 | [x] | T3.1 |
 | T4.2 | WebRTC Sink | P4 | P0 | [ ] | T3.1 |
 | T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [ ] | T4.1、T4.2 |
-| T4.4 | JsonResultSink + MjpegSink | P4 | P0 | [ ] | T3.1 |
+| T4.4 | JsonResultSink + MjpegSink | P4 | P0 | [x] | T3.1 |
 | T5.1 | 多 Pipeline 并发集成测试 | P5 | P0 | [ ] | T4.1 |
 | T5.2 | 性能 benchmark + 调优 | P5 | P0 | [ ] | T5.1 |
 | T5.3 | 文档与 Demo | P5 | P1 | [ ] | T5.2 |

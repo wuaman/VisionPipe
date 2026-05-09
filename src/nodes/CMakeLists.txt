@@ -5,6 +5,8 @@ set(VISIONPIPE_NODES_SOURCES
     source/file_source.cpp
     source/rtsp_source.cpp
     tracker/bytetrack_node.cpp
+    sink/json_result_sink.cpp
+    sink/mjpeg_sink.cpp
 )
 
 # 添加推理节点源文件
@@ -33,6 +35,7 @@ target_link_libraries(visionpipe_nodes
     PUBLIC
         visionpipe_core
         spdlog::spdlog
+        nlohmann_json::nlohmann_json
 )
 
 # CUDA 支持

@@ -2,11 +2,13 @@
 
 Endpoints
 ---------
-POST   /pipelines                  Create and start a pipeline from YAML/JSON spec
-GET    /pipelines                  List all pipeline IDs and states
-DELETE /pipelines/{id}             Stop and destroy a pipeline
-GET    /pipelines/{id}/health      Return per-node QueueStats + FPS
-POST   /pipelines/{id}/params      Set a runtime param on a node
+POST   /pipelines                    Create and start a pipeline from YAML/JSON spec
+GET    /pipelines                    List all pipeline IDs and states
+DELETE /pipelines/{id}               Stop and destroy a pipeline
+GET    /pipelines/{id}/health        Return per-node QueueStats + FPS
+POST   /pipelines/{id}/params        Set a runtime param on a node
+GET    /mjpeg/{id}                   MJPEG multipart stream from MjpegSink node
+GET    /ws/{id}/results              WebSocket stream of per-frame JSON from JsonResultSink node
 """
 
 from __future__ import annotations
@@ -85,6 +87,8 @@ class ManagementServer:
         self._app.router.add_delete("/pipelines/{id}", self._delete_pipeline)
         self._app.router.add_get("/pipelines/{id}/health", self._get_health)
         self._app.router.add_post("/pipelines/{id}/params", self._post_params)
+        self._app.router.add_get("/mjpeg/{id}", self._get_mjpeg)
+        self._app.router.add_get("/ws/{id}/results", self._ws_results)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -194,6 +198,78 @@ class ManagementServer:
             nodes=node_health,
         )
         return _json(resp.model_dump())
+
+    async def _get_mjpeg(self, request: web.Request) -> web.StreamResponse:
+        import visionpipe
+
+        pid = request.match_info["id"]
+        try:
+            pipeline = self._manager.get(pid)
+        except Exception as exc:
+            return _err(str(exc), 404)
+
+        sink = next(
+            (n for n in pipeline.nodes().values() if isinstance(n, visionpipe.MjpegSink)),
+            None,
+        )
+        if sink is None:
+            return _err(f"Pipeline '{pid}' has no MjpegSink node", 404)
+
+        resp = web.StreamResponse(headers={"Content-Type": "multipart/x-mixed-replace; boundary=frame"})
+        await resp.prepare(request)
+
+        try:
+            while True:
+                jpeg = await asyncio.get_event_loop().run_in_executor(None, lambda: sink.pop_jpeg(500))
+                if jpeg is None:
+                    continue
+                header = (
+                    b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n"
+                )
+                await resp.write(header + jpeg + b"\r\n")
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass
+
+        return resp
+
+    async def _ws_results(self, request: web.Request) -> web.WebSocketResponse:
+        import visionpipe
+
+        pid = request.match_info["id"]
+        try:
+            pipeline = self._manager.get(pid)
+        except Exception as exc:
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            await ws.close(code=4004, message=str(exc).encode())
+            return ws
+
+        sink = next(
+            (n for n in pipeline.nodes().values() if isinstance(n, visionpipe.JsonResultSink)),
+            None,
+        )
+        if sink is None:
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            await ws.close(code=4004, message=f"Pipeline '{pid}' has no JsonResultSink node".encode())
+            return ws
+
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        logger.info("WebSocket /ws/%s/results connected", pid)
+
+        try:
+            while not ws.closed:
+                json_str = await asyncio.get_event_loop().run_in_executor(None, lambda: sink.pop_json(500))
+                if json_str is None:
+                    continue
+                await ws.send_str(json_str)
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass
+        finally:
+            logger.info("WebSocket /ws/%s/results disconnected", pid)
+
+        return ws
 
     async def _post_params(self, request: web.Request) -> web.Response:
         pid = request.match_info["id"]
@@ -306,6 +382,17 @@ class ManagementServer:
                 node_map[ns.name] = visionpipe.ByteTrackNode(cfg, ns.name)
             elif ns.type == "py_node":
                 node_map[ns.name] = visionpipe.PyNode(ns.name)
+            elif ns.type == "json_result_sink":
+                cfg = visionpipe.JsonResultSinkConfig()
+                cfg.buffer_capacity = p.get("buffer_capacity", 30)
+                cfg.include_detections = p.get("include_detections", True)
+                cfg.include_tracks = p.get("include_tracks", True)
+                node_map[ns.name] = visionpipe.JsonResultSink(cfg, ns.name)
+            elif ns.type == "mjpeg_sink":
+                cfg = visionpipe.MjpegSinkConfig()
+                cfg.jpeg_quality = p.get("jpeg_quality", 85)
+                cfg.buffer_capacity = p.get("buffer_capacity", 2)
+                node_map[ns.name] = visionpipe.MjpegSink(cfg, ns.name)
             else:
                 raise ValueError(f"Unsupported node type: {ns.type}")
 

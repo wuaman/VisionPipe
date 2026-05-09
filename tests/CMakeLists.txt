@@ -29,6 +29,7 @@ target_include_directories(visionpipe_tests PRIVATE
 set(VISIONPIPE_INTEGRATION_TEST_SOURCES
     integration/cpp/test_trt_engine.cpp
     integration/cpp/test_source_nodes.cpp
+    integration/cpp/test_sinks.cpp
 )
 
 # 添加推理节点测试
@@ -47,6 +48,7 @@ target_link_libraries(visionpipe_integration_tests
         visionpipe_hal
         visionpipe_nodes
         ${OpenCV_LIBS}
+        nlohmann_json::nlohmann_json
         GTest::gtest
         GTest::gtest_main
 )
