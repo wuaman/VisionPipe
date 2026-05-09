@@ -91,6 +91,7 @@ class ManagementServer:
         self._app.router.add_get("/mjpeg/{id}", self._get_mjpeg)
         self._app.router.add_get("/ws/{id}/results", self._ws_results)
         self._app.router.add_get("/ws/{id}/webrtc", self._ws_webrtc)
+        self._app.router.add_get("/ws/{id}/control", self._ws_control)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -298,6 +299,20 @@ class ManagementServer:
         from visionpipe.server.signaling import handle_webrtc_signaling
 
         return await handle_webrtc_signaling(request, sink)
+
+    async def _ws_control(self, request: web.Request) -> web.WebSocketResponse:
+        pid = request.match_info["id"]
+        try:
+            pipeline = self._manager.get(pid)
+        except Exception as exc:
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            await ws.close(code=4004, message=str(exc).encode())
+            return ws
+
+        from visionpipe.server.control_ws import handle_control_ws
+
+        return await handle_control_ws(request, pipeline)
 
     async def _post_params(self, request: web.Request) -> web.Response:
         pid = request.match_info["id"]
