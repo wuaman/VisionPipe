@@ -9,6 +9,7 @@ add_library(visionpipe_core STATIC
     pipeline_manager.cpp
     model_registry.cpp
     infer_node.cpp
+    py_node.cpp
     # 源文件将在后续任务中添加
     # frame.cpp (header-only)
     # bounded_queue.cpp (header-only)

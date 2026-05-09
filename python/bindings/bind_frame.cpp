@@ -165,7 +165,7 @@ void bind_frame(nb::module_& m) {
         .def_rw("age", &Track::age)
         .def_rw("confidence", &Track::confidence);
 
-    nb::class_<Frame>(m, "Frame")
+    nb::class_<Frame>(m, "Frame", nb::dynamic_attr())
         .def(nb::init<>())
         .def_rw("stream_id", &Frame::stream_id)
         .def_rw("frame_id", &Frame::frame_id)

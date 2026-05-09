@@ -119,6 +119,7 @@ void NodeBase::worker_loop() {
         }
 
         if (!input_queue_) {
+            state_ = NodeState::STOPPED;
             break;
         }
 

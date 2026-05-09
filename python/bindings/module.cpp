@@ -11,5 +11,6 @@ NB_MODULE(visionpipe_python, m) {
     bind_enums(m);
     bind_frame(m);
     bind_nodes(m);
+    bind_py_node(m);
     bind_pipeline(m);
 }

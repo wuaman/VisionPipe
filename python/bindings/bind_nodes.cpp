@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "bindings.h"
+#include "core/bounded_queue.h"
 #include "core/frame.h"
 #include "core/node_base.h"
 #include "hal/imodel_engine.h"
@@ -43,6 +44,9 @@ void bind_nodes(nb::module_& m) {
         .def("stats", &NodeBase::stats)
         .def("is_source", &NodeBase::is_source)
         .def("is_sink", &NodeBase::is_sink)
+        .def("create_output_queue", &NodeBase::create_output_queue,
+             nb::arg("capacity") = 16,
+             nb::arg("policy") = OverflowPolicy::DROP_OLDEST)
         .def("pop_frame", [](NodeBase& node, int timeout_ms) -> nb::object {
             auto q = node.output_queue();
             if (!q) return nb::none();

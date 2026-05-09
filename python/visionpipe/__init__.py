@@ -4,6 +4,8 @@ from importlib import import_module
 from pathlib import Path
 import sys
 
+from visionpipe.py_node import PyNode
+
 __version__ = "0.1.0"
 
 
@@ -58,6 +60,7 @@ IModelEngine = _ext.IModelEngine
 MockModelEngine = _ext.MockModelEngine
 TrtModelEngine = _ext.TrtModelEngine
 NodeBase = _ext.NodeBase
+_PyNodeCpp = _ext.PyNode
 FileSource = _ext.FileSource
 RtspSource = _ext.RtspSource
 ByteTrackNode = _ext.ByteTrackNode
@@ -85,6 +88,7 @@ Pipeline.run = _pipeline_run
 
 __all__ = [
     "__version__",
+    "PyNode",
     "VisionPipeError",
     "ConfigError",
     "NotFoundError",
