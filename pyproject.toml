@@ -35,6 +35,8 @@ dev = [
     "mypy>=1.0.0",
     "httpx>=0.24.0",
     "aiohttp>=3.9.0",
+    "playwright>=1.40.0",
+    "pytest-playwright>=0.4.0",
 ]
 
 [build-system]

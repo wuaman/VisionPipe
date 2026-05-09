@@ -25,7 +25,9 @@ def test_exports_are_available() -> None:
     assert visionpipe.DetectorNode is not None
     assert visionpipe.ClassifierNode is not None
     assert visionpipe.SegmentNode is not None
-    assert not hasattr(visionpipe, "WebRTCSink")
+    assert visionpipe.JsonResultSink is not None
+    assert visionpipe.MjpegSink is not None
+    assert visionpipe.WebRTCSink is not None
 
 
 def test_source_config_defaults_and_mutation() -> None:

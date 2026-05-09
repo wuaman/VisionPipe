@@ -20,6 +20,7 @@ option(VISIONPIPE_BUILD_TESTS "Build unit tests" ON)
 option(VISIONPIPE_BUILD_PYTHON "Build Python bindings" ON)
 option(VISIONPIPE_USE_CUDA "Enable CUDA support" ON)
 option(VISIONPIPE_USE_TENSORRT "Enable TensorRT support" ON)
+option(VISIONPIPE_USE_WEBRTC "Enable WebRTC sink (requires libdatachannel + FFmpeg)" OFF)
 
 if(VISIONPIPE_USE_CUDA)
     enable_language(CUDA)
@@ -56,6 +57,22 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(spdlog nlohmann_json)
+
+if(VISIONPIPE_USE_WEBRTC)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FFMPEG REQUIRED libavcodec libavutil libswscale)
+
+    # libdatachannel: disable unnecessary subcomponents to keep the build lean
+    set(NO_WEBSOCKET  ON  CACHE BOOL "" FORCE)
+    set(NO_EXAMPLES   ON  CACHE BOOL "" FORCE)
+    set(NO_TESTS      ON  CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        libdatachannel
+        GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git
+        GIT_TAG        v0.20.2
+    )
+    FetchContent_MakeAvailable(libdatachannel)
+endif()
 
 if(VISIONPIPE_BUILD_TESTS)
     FetchContent_MakeAvailable(googletest)

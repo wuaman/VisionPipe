@@ -34,6 +34,9 @@ NodeType = Literal[
     "segment",
     "bytetrack",
     "py_node",
+    "json_result_sink",
+    "mjpeg_sink",
+    "webrtc_sink",
 ]
 
 _VALID_NODE_TYPES: set[str] = set(NodeType.__args__)  # type: ignore[attr-defined]
@@ -92,6 +95,9 @@ def _node_type_str(node: Any) -> str:
         "SegmentNode": "segment",
         "ByteTrackNode": "bytetrack",
         "PyNode": "py_node",
+        "JsonResultSink": "json_result_sink",
+        "MjpegSink": "mjpeg_sink",
+        "WebRTCSink": "webrtc_sink",
     }
     result = _map.get(type_name)
     if result is None:
@@ -162,6 +168,28 @@ def _node_params(node: Any) -> dict[str, Any]:
             "track_buffer": cfg.track_buffer,
             "match_thresh": cfg.match_thresh,
             "frame_rate": cfg.frame_rate,
+        }
+    if type_name == "JsonResultSink":
+        cfg = node.config()
+        return {
+            "buffer_capacity": cfg.buffer_capacity,
+            "include_detections": cfg.include_detections,
+            "include_tracks": cfg.include_tracks,
+        }
+    if type_name == "MjpegSink":
+        cfg = node.config()
+        return {
+            "jpeg_quality": cfg.jpeg_quality,
+            "buffer_capacity": cfg.buffer_capacity,
+        }
+    if type_name == "WebRTCSink":
+        cfg = node.config()
+        return {
+            "video_bitrate_kbps": cfg.video_bitrate_kbps,
+            "fps": cfg.fps,
+            "keyframe_interval": cfg.keyframe_interval,
+            "stun_server": cfg.stun_server,
+            "use_nvenc": cfg.use_nvenc,
         }
     # py_node / unknown — no serializable params
     return {}

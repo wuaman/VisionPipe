@@ -71,6 +71,13 @@ Pipeline = _ext.Pipeline
 PipelineBuilder = _ext.PipelineBuilder
 PipelineManager = _ext.PipelineManager
 
+JsonResultSinkConfig = _ext.JsonResultSinkConfig
+JsonResultSink = _ext.JsonResultSink
+MjpegSinkConfig = _ext.MjpegSinkConfig
+MjpegSink = _ext.MjpegSink
+WebRTCSinkConfig = _ext.WebRTCSinkConfig
+WebRTCSink = _ext.WebRTCSink
+
 
 def _node_rshift(self: NodeBase, other: NodeBase) -> PipelineBuilder:
     builder = PipelineBuilder()
@@ -137,4 +144,10 @@ __all__ = [
     "PipelineSpec",
     "NodeSpec",
     "EdgeSpec",
+    "JsonResultSinkConfig",
+    "JsonResultSink",
+    "MjpegSinkConfig",
+    "MjpegSink",
+    "WebRTCSinkConfig",
+    "WebRTCSink",
 ]

@@ -21,6 +21,7 @@
 #include "nodes/infer/segment_node.h"
 #include "nodes/sink/json_result_sink.h"
 #include "nodes/sink/mjpeg_sink.h"
+#include "nodes/sink/webrtc_sink.h"
 
 namespace nb = nanobind;
 using namespace visionpipe;
@@ -157,4 +158,29 @@ void bind_nodes(nb::module_& m) {
             return nb::cast(nb::bytes(
                 reinterpret_cast<const char*>(result->data()), result->size()));
         }, nb::arg("timeout_ms") = 500);
+
+    nb::class_<WebRTCSinkConfig>(m, "WebRTCSinkConfig")
+        .def(nb::init<>())
+        .def_rw("video_bitrate_kbps", &WebRTCSinkConfig::video_bitrate_kbps)
+        .def_rw("fps", &WebRTCSinkConfig::fps)
+        .def_rw("keyframe_interval", &WebRTCSinkConfig::keyframe_interval)
+        .def_rw("stun_server", &WebRTCSinkConfig::stun_server)
+        .def_rw("use_nvenc", &WebRTCSinkConfig::use_nvenc);
+
+    nb::class_<WebRTCSink, NodeBase>(m, "WebRTCSink")
+        .def(nb::init<const WebRTCSinkConfig&, const std::string&>(),
+             nb::arg("config") = WebRTCSinkConfig(),
+             nb::arg("name") = "webrtc_sink")
+        .def("config", &WebRTCSink::config, nb::rv_policy::reference_internal)
+        .def("create_peer", &WebRTCSink::create_peer)
+        .def("get_offer", [](WebRTCSink& sink, const std::string& peer_id, int timeout_ms) {
+            return sink.get_offer(peer_id, std::chrono::milliseconds(timeout_ms));
+        }, nb::arg("peer_id"), nb::arg("timeout_ms") = 10'000)
+        .def("set_answer", &WebRTCSink::set_answer,
+             nb::arg("peer_id"), nb::arg("sdp"))
+        .def("add_candidate", &WebRTCSink::add_candidate,
+             nb::arg("peer_id"), nb::arg("candidate"), nb::arg("mid"))
+        .def("drain_candidates", &WebRTCSink::drain_candidates, nb::arg("peer_id"))
+        .def("remove_peer", &WebRTCSink::remove_peer, nb::arg("peer_id"))
+        .def("peer_count", &WebRTCSink::peer_count);
 }

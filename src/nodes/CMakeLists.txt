@@ -7,6 +7,7 @@ set(VISIONPIPE_NODES_SOURCES
     tracker/bytetrack_node.cpp
     sink/json_result_sink.cpp
     sink/mjpeg_sink.cpp
+    sink/webrtc_sink.cpp  # always compiled; #ifdef inside switches real vs stub
 )
 
 # 添加推理节点源文件
@@ -49,6 +50,13 @@ if(VISIONPIPE_USE_TENSORRT)
     target_include_directories(visionpipe_nodes PRIVATE ${TensorRT_INCLUDE_DIRS})
     target_link_libraries(visionpipe_nodes PRIVATE visionpipe_hal)
     target_compile_definitions(visionpipe_nodes PRIVATE VISIONPIPE_USE_TENSORRT)
+endif()
+
+# WebRTC + FFmpeg 支持
+if(VISIONPIPE_USE_WEBRTC)
+    target_compile_definitions(visionpipe_nodes PRIVATE VISIONPIPE_USE_WEBRTC)
+    target_include_directories(visionpipe_nodes PRIVATE ${FFMPEG_INCLUDE_DIRS})
+    target_link_libraries(visionpipe_nodes PRIVATE datachannel ${FFMPEG_LIBRARIES})
 endif()
 
 # OpenCV 支持

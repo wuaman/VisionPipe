@@ -9,6 +9,7 @@ GET    /pipelines/{id}/health        Return per-node QueueStats + FPS
 POST   /pipelines/{id}/params        Set a runtime param on a node
 GET    /mjpeg/{id}                   MJPEG multipart stream from MjpegSink node
 GET    /ws/{id}/results              WebSocket stream of per-frame JSON from JsonResultSink node
+GET    /ws/{id}/webrtc               WebRTC signaling WebSocket (SDP offer/answer + ICE)
 """
 
 from __future__ import annotations
@@ -89,6 +90,7 @@ class ManagementServer:
         self._app.router.add_post("/pipelines/{id}/params", self._post_params)
         self._app.router.add_get("/mjpeg/{id}", self._get_mjpeg)
         self._app.router.add_get("/ws/{id}/results", self._ws_results)
+        self._app.router.add_get("/ws/{id}/webrtc", self._ws_webrtc)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -271,6 +273,32 @@ class ManagementServer:
 
         return ws
 
+    async def _ws_webrtc(self, request: web.Request) -> web.WebSocketResponse:
+        import visionpipe
+
+        pid = request.match_info["id"]
+        try:
+            pipeline = self._manager.get(pid)
+        except Exception as exc:
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            await ws.close(code=4004, message=str(exc).encode())
+            return ws
+
+        sink = next(
+            (n for n in pipeline.nodes().values() if isinstance(n, visionpipe.WebRTCSink)),
+            None,
+        )
+        if sink is None:
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            await ws.close(code=4004, message=f"Pipeline '{pid}' has no WebRTCSink node".encode())
+            return ws
+
+        from visionpipe.server.signaling import handle_webrtc_signaling
+
+        return await handle_webrtc_signaling(request, sink)
+
     async def _post_params(self, request: web.Request) -> web.Response:
         pid = request.match_info["id"]
         try:
@@ -393,6 +421,14 @@ class ManagementServer:
                 cfg.jpeg_quality = p.get("jpeg_quality", 85)
                 cfg.buffer_capacity = p.get("buffer_capacity", 2)
                 node_map[ns.name] = visionpipe.MjpegSink(cfg, ns.name)
+            elif ns.type == "webrtc_sink":
+                cfg = visionpipe.WebRTCSinkConfig()
+                cfg.video_bitrate_kbps = p.get("video_bitrate_kbps", 2000)
+                cfg.fps = p.get("fps", 30)
+                cfg.keyframe_interval = p.get("keyframe_interval", 60)
+                cfg.stun_server = p.get("stun_server", "stun:stun.l.google.com:19302")
+                cfg.use_nvenc = p.get("use_nvenc", True)
+                node_map[ns.name] = visionpipe.WebRTCSink(cfg, ns.name)
             else:
                 raise ValueError(f"Unsupported node type: {ns.type}")
 
