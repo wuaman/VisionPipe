@@ -141,10 +141,8 @@ void FileSource::on_init() {
 }
 
 void FileSource::on_stop() {
-  cpu_capture_.reset();
-#ifdef VISIONPIPE_USE_CUDA
-  gpu_reader_ = nullptr;
-#endif
+  // Resources are cleaned up in source_worker_loop() after the read loop exits,
+  // to avoid racing with the source thread that may be blocked in read().
 }
 
 void FileSource::source_worker_loop() {
@@ -179,6 +177,12 @@ void FileSource::source_worker_loop() {
     frame = Frame();
     frame.stream_id = config_.stream_id;
   }
+
+  // Clean up decode resources here (safe: we are the only thread using them).
+  cpu_capture_.reset();
+#ifdef VISIONPIPE_USE_CUDA
+  gpu_reader_ = nullptr;
+#endif
 
   state_ = NodeState::STOPPED;
   if (output_queue_) {

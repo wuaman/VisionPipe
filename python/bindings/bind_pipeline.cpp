@@ -37,9 +37,12 @@ void bind_pipeline(nb::module_& m) {
                             const std::shared_ptr<NodeBase>& downstream) -> Pipeline& {
             return pipeline.connect(upstream, downstream);
         }, nb::arg("upstream"), nb::arg("downstream"), nb::rv_policy::reference_internal)
-        .def("start", &Pipeline::start)
-        .def("stop", &Pipeline::stop, nb::arg("drain") = true)
-        .def("wait_stop", &Pipeline::wait_stop)
+        .def("start", &Pipeline::start,
+             nb::call_guard<nb::gil_scoped_release>())
+        .def("stop", &Pipeline::stop, nb::arg("drain") = true,
+             nb::call_guard<nb::gil_scoped_release>())
+        .def("wait_stop", &Pipeline::wait_stop,
+             nb::call_guard<nb::gil_scoped_release>())
         .def("id", &Pipeline::id, nb::rv_policy::reference_internal)
         .def("name", &Pipeline::name, nb::rv_policy::reference_internal)
         .def("state", &Pipeline::state)
@@ -62,9 +65,12 @@ void bind_pipeline(nb::module_& m) {
         .def(nb::init<>())
         .def("create", nb::overload_cast<const PipelineConfig&>(&PipelineManager::create), nb::arg("config") = PipelineConfig())
         .def("create_pipeline", nb::overload_cast<PipelinePtr>(&PipelineManager::create), nb::arg("pipeline"))
-        .def("start", &PipelineManager::start, nb::arg("id"))
-        .def("stop", &PipelineManager::stop, nb::arg("id"), nb::arg("drain") = true)
-        .def("destroy", &PipelineManager::destroy, nb::arg("id"))
+        .def("start", &PipelineManager::start, nb::arg("id"),
+             nb::call_guard<nb::gil_scoped_release>())
+        .def("stop", &PipelineManager::stop, nb::arg("id"), nb::arg("drain") = true,
+             nb::call_guard<nb::gil_scoped_release>())
+        .def("destroy", &PipelineManager::destroy, nb::arg("id"),
+             nb::call_guard<nb::gil_scoped_release>())
         .def("status", &PipelineManager::status, nb::arg("id"))
         .def("list", &PipelineManager::list)
         .def("get", &PipelineManager::get, nb::arg("id"));
