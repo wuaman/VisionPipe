@@ -119,6 +119,7 @@ void NodeBase::worker_loop() {
         }
 
         if (!input_queue_) {
+            VP_LOG_ERROR("Node '{}' worker_loop: input_queue is null, stopping", name_);
             state_ = NodeState::STOPPED;
             break;
         }

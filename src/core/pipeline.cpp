@@ -121,13 +121,21 @@ void Pipeline::validate_dag() const {
         throw ConfigError("Pipeline DAG has cycle");
     }
 
-    // 检查是否有孤立节点（无入边且无出边，且不是源节点）
+    // 检查是否有孤立节点（无入边且无出边）
     for (const auto& [name, node] : nodes_) {
         bool has_incoming = reverse_edges_.count(name) > 0 && !reverse_edges_.at(name).empty();
         bool has_outgoing = edges_.count(name) > 0 && !edges_.at(name).empty();
 
         if (!has_incoming && !has_outgoing) {
-            VP_LOG_WARN("Node '{}' is isolated in pipeline '{}'", name, name_);
+            if (node->is_source()) {
+                // 源节点无下游：合法但低效，仅警告
+                VP_LOG_WARN("Node '{}' is isolated in pipeline '{}'", name, name_);
+            } else {
+                // 非源节点孤立：永远收不到帧，直接报错
+                throw ConfigError(
+                    fmt::format("Non-source node '{}' is isolated in pipeline '{}' "
+                                "(no incoming edge and no outgoing edge)", name, name_));
+            }
         }
     }
 }
@@ -193,6 +201,11 @@ void Pipeline::start() {
     // 启动所有非源节点（它们从 input_queue 消费）
     for (auto& [name, node] : nodes_) {
         if (!node->is_source()) {
+            if (!node->input_queue()) {
+                throw ConfigError(
+                    fmt::format("Node '{}' has no input queue; "
+                                "call connect() to wire it before start()", name));
+            }
             node->start();
         }
     }
@@ -267,9 +280,7 @@ NodePtr Pipeline::get_node(const std::string& name) const {
 std::vector<NodePtr> Pipeline::source_nodes() const {
     std::vector<NodePtr> sources;
     for (const auto& [name, node] : nodes_) {
-        // 源节点：无入边
-        bool has_incoming = reverse_edges_.count(name) > 0 && !reverse_edges_.at(name).empty();
-        if (!has_incoming) {
+        if (node->is_source()) {
             sources.push_back(node);
         }
     }
