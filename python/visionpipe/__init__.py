@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import sys
 from importlib import import_module
 from pathlib import Path
-import sys
 
 from visionpipe.py_node import PyNode
 
@@ -86,6 +86,15 @@ def _pipeline_run(self: Pipeline) -> Pipeline:
 NodeBase.__rshift__ = _node_rshift
 Pipeline.run = _pipeline_run
 
+from visionpipe.serialization import (  # noqa: E402
+    EdgeSpec,
+    NodeSpec,
+    PipelineSpec,
+    _attach_to_pipeline,
+)
+
+_attach_to_pipeline()
+
 __all__ = [
     "__version__",
     "PyNode",
@@ -125,4 +134,7 @@ __all__ = [
     "Pipeline",
     "PipelineBuilder",
     "PipelineManager",
+    "PipelineSpec",
+    "NodeSpec",
+    "EdgeSpec",
 ]

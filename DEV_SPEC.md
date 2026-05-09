@@ -1389,7 +1389,7 @@ public:
 | T2.5 | 分割节点 + ByteTrack | P2 | P1 | [x] | T2.1 |
 | T3.1 | nanobind 绑定核心类 | P3 | P0 | [x] | T2.3、T2.4 |
 | T3.2 | PyNode 自定义业务节点 | P3 | P0 | [x] | T3.1 |
-| T3.3 | YAML 导出/导入 | P3 | P1 | [ ] | T3.1 |
+| T3.3 | YAML 导出/导入 | P3 | P1 | [x] | T3.1 |
 | T4.1 | 内嵌管理 REST API | P4 | P0 | [ ] | T3.1 |
 | T4.2 | WebRTC Sink | P4 | P0 | [ ] | T3.1 |
 | T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [ ] | T4.1、T4.2 |
