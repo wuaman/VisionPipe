@@ -726,7 +726,10 @@ public:
   - src/core/bounded_queue.h
   - tests/unit/cpp/test_bounded_queue.cpp
 - 实现的类/函数
-  - struct Frame（stream_id, frame_id, pts_us, user_data）
+  - struct Frame（stream_id, frame_id, pts_us, image, detections, classifications, segments/masks, tracks, user_data: map<string, any>）
+  - struct Detection（bbox, class_id, confidence, track_id）
+  - struct Classification（detection_index, class_id, confidence）
+  - struct Track（track_id, class_id, bbox, age, confidence）
   - struct Tensor（shape, dtype, void* data, IAllocator*）
   - class BoundedQueue<T>（DROP_OLDEST / DROP_NEWEST / BLOCK）
   - struct QueueStats
@@ -1037,8 +1040,11 @@ public:
   - src/core/infer_node.h / infer_node.cpp
   - tests/unit/cpp/test_parallel_workers.cpp
 - 实现的类/函数
-  - InferNode(engine, workers=1)：启动 N 个 worker 线程
-  - 输入端 work-stealing，输出端按 frame_id 重排序后入下游队列
+  - InferNode(engine, workers=1, max_batch_size=1, batch_timeout_ms=5)：启动 N 个 worker 线程
+  - 每个 worker 动态攒帧：取到第一帧后非阻塞继续取，直到 max_batch_size 或 batch_timeout
+  - 子类实现 `virtual void process_batch(std::vector<Frame>& frames) = 0`
+  - InferNode 提供 `void run_inference(const Tensor& input, Tensor& output)` 辅助方法（管理 context/stream）
+  - 输出端按 frame_id 重排序后入下游队列
 - 验收标准
   - workers=3 时，吞吐量 ≥ workers=1 的 2.5 倍（Mock sleep 模拟推理耗时）
   - 输出帧顺序与输入一致（frame_id 严格单调递增）
@@ -1148,8 +1154,8 @@ public:
 - 实现的类/函数
   - enum class DecodeMode { AUTO, GPU, CPU }
   - struct SourceConfig（uri, decode_mode, gpu_device, queue_capacity, overflow_policy）
-  - class FileSource : public NodeBase（接受 SourceConfig）
-  - class RtspSource : public NodeBase（接受 SourceConfig）
+  - class FileSource : public SourceNode（接受 SourceConfig）
+  - class RtspSource : public SourceNode（接受 SourceConfig）
   - GPU 路径：`cv::cudacodec::VideoReader::nextFrame()` → `cv::cuda::GpuMat` → Frame.image
   - CPU 路径：`cv::VideoCapture::read()` → `cv::Mat` → `GpuMat::upload()` → Frame.image
   - AUTO 模式：运行时检测 NVCUVID 可用性，优先 GPU，不可用时自动退化为 CPU 并记日志
@@ -1217,12 +1223,14 @@ public:
 - 实现的类/函数
   - class ClassifierNode : public InferNode（自动帧内 batch crop）
   - class ClassificationSoftmax
+  - struct Classification（detection_index, class_id, confidence）
+  - struct ClassifierConfig（engine_path, target_classes, max_batch_size, ...）
+- ClassifierNode 双模式
+  - 模式 1（二级分类）：target_classes 非空，筛选 frame.detections 中匹配类别的 bbox → crop → batch 推理 → 结果写入 frame.classifications。若无匹配的 detection，透传。
+  - 模式 2（整图分类）：target_classes 为空，直接用 frame.image 整图推理 → 结果写入 frame.classifications（detection_index = -1），不依赖 detections。
 - Frame 输出约定
-  - ClassifierNode 读取 `frame.detections`，对每个 detection 按 bbox 坐标从 `frame.image` 裁剪 crop
-  - 所有 crop 拼成 batch=N 一次推理（N = 当前帧 detections 数量）
-  - 推理完成后按 index 回写：`detections[i].class_id` ← 分类标签，`detections[i].confidence` ← softmax 最大概率
-  - 不新增 Frame 字段，不修改 `frame.image`，不修改 `detections[i].bbox`
-  - 若 `frame.detections` 为空，ClassifierNode 直接透传 Frame，不做任何推理
+  - ClassifierNode 结果写入 `frame.classifications`（独立字段），不覆盖 detections
+  - Classification 通过 detection_index 关联对应的 detection
 - 验收标准
   - ResNet50 / EfficientNet-B0 / ShuffleNetV2 三个模型均完成 ONNX→TRT 转换并通过推理验证
   - 单帧 20 个 crop 打包成 batch=20 推理，吞吐 ≥ 单张循环推理 10×
@@ -1427,11 +1435,11 @@ public:
 | T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [x] | T0.2 |
 | T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
 | T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [x] | T1.3 |
-| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [x] | T1.1 |
+| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 | 需要：继承 SourceNode（非 NodeBase）+ SourceConfig 补充 Phase 1 字段 |
 | T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | P5 | P1 | [ ] | T2.2a、T5.1 |
-| T2.3 | YOLOv8 检测节点 | P2 | P0 | [x] | T2.1、T2.2a |
-| T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [x] | T2.1 |
-| T2.5 | 分割节点 + ByteTrack | P2 | P1 | [x] | T2.1 |
+| T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2a | 需要：InferNode 改为 process_batch 接口 |
+| T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 | 需要：target_classes 双模式 + 结果写入 frame.classifications（非覆盖 detections） |
+| T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 | 需要：Frame 新增 classifications 字段 + InferNode batch 接口 |
 | T3.1 | nanobind 绑定核心类 | P3 | P0 | [x] | T2.3、T2.4 |
 | T3.2 | PyNode 自定义业务节点 | P3 | P0 | [x] | T3.1 |
 | T3.3 | YAML 导出/导入 | P3 | P1 | [x] | T3.1 |
