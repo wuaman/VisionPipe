@@ -22,6 +22,7 @@
 #include "nodes/sink/json_result_sink.h"
 #include "nodes/sink/mjpeg_sink.h"
 #include "nodes/sink/webrtc_sink.h"
+#include "nodes/visualize/annotator_node.h"
 
 namespace nb = nanobind;
 using namespace visionpipe;
@@ -158,6 +159,20 @@ void bind_nodes(nb::module_& m) {
             return nb::cast(nb::bytes(
                 reinterpret_cast<const char*>(result->data()), result->size()));
         }, nb::arg("timeout_ms") = 500);
+
+    nb::class_<AnnotatorConfig>(m, "AnnotatorConfig")
+        .def(nb::init<>())
+        .def_rw("draw_detections", &AnnotatorConfig::draw_detections)
+        .def_rw("draw_tracks",     &AnnotatorConfig::draw_tracks)
+        .def_rw("draw_masks",      &AnnotatorConfig::draw_masks)
+        .def_rw("mask_alpha",      &AnnotatorConfig::mask_alpha)
+        .def_rw("class_names",     &AnnotatorConfig::class_names);
+
+    nb::class_<AnnotatorNode, NodeBase>(m, "AnnotatorNode")
+        .def(nb::init<const AnnotatorConfig&, const std::string&>(),
+             nb::arg("config") = AnnotatorConfig(),
+             nb::arg("name") = "annotator")
+        .def("config", &AnnotatorNode::config, nb::rv_policy::reference_internal);
 
     nb::class_<WebRTCSinkConfig>(m, "WebRTCSinkConfig")
         .def(nb::init<>())

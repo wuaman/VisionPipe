@@ -42,6 +42,7 @@ struct Frame {
     Tensor image;                    ///< GPU/CPU tensor
     std::vector<Detection> detections;  ///< 检测结果
     std::vector<Track> tracks;          ///< 追踪结果
+    std::vector<std::vector<uint8_t>> masks;  ///< 分割掩码，每个 detection 对应一个，orig_h×orig_w 行优先 0/1
     std::any user_data;                 ///< 用户附加数据
 
     /// @brief 默认构造函数
@@ -66,6 +67,7 @@ struct Frame {
         image = Tensor();
         detections.clear();
         tracks.clear();
+        masks.clear();
         user_data.reset();
     }
 

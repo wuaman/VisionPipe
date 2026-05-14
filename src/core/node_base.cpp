@@ -127,6 +127,11 @@ void NodeBase::worker_loop() {
         // 尝试从 input_queue 取帧，带超时避免死锁
         auto frame_opt = input_queue_->pop_for(std::chrono::milliseconds(100));
         if (!frame_opt.has_value()) {
+            // 上游已停止且队列已排空：自动停止（与 DetectorNode 行为一致）
+            if (input_queue_->stopped_and_empty()) {
+                state_ = NodeState::STOPPED;
+                break;
+            }
             // DRAINING + 队列空 → 退出
             if (state_ == NodeState::DRAINING) {
                 state_ = NodeState::STOPPED;
@@ -146,6 +151,10 @@ void NodeBase::worker_loop() {
 
     if (input_queue_) {
         input_queue_->stop();
+    }
+    // 传播停止信号：让下游节点也能检测到 stopped_and_empty()
+    if (output_queue_) {
+        output_queue_->stop();
     }
     VP_LOG_INFO("Node '{}' worker thread stopped, processed {} frames",
                 name_, processed_count_.load());

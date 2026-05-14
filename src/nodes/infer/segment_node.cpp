@@ -216,8 +216,11 @@ void SegmentNode::postprocess(Frame& frame, const Tensor& det_output,
     SegMaskDecoder::decode(det_output, proto_output, frame.detections, masks,
                           params, letterbox_params, orig_width, orig_height);
 
-    std::lock_guard<std::mutex> lock(masks_mutex_);
-    last_masks_ = masks;
+    frame.masks = masks;
+    {
+        std::lock_guard<std::mutex> lock(masks_mutex_);
+        last_masks_ = std::move(masks);
+    }
 }
 
 }  // namespace visionpipe

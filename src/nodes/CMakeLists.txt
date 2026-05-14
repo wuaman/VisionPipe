@@ -8,6 +8,7 @@ set(VISIONPIPE_NODES_SOURCES
     sink/json_result_sink.cpp
     sink/mjpeg_sink.cpp
     sink/webrtc_sink.cpp  # always compiled; #ifdef inside switches real vs stub
+    visualize/annotator_node.cpp
 )
 
 # 添加推理节点源文件

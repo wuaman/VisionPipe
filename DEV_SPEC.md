@@ -315,20 +315,39 @@ C++ 对象到 Python 的桥梁。将 Pipeline、Frame、Detection、各 Node 类
 #### 5.2.1 节点基类体系
 
 ```
-BaseNode (C++)
-├── SourceNode          # 视频源：RTSP/文件/摄像头
-├── InferNode           # 通用推理节点（持有 IExecContext × N workers）
-│   ├── DetectorNode    # 目标检测（内置 bbox 后处理）
-│   ├── ClassifierNode  # 图像分类（帧内 batch crop）
-│   ├── SegmentNode     # 实例分割
-│   └── TrackerNode     # 追踪（ByteTrack，纯 CPU）
-├── SinkNode            # 输出节点
-│   ├── WebRTCSink      # WebRTC 实时预览（核心）
-│   ├── JsonResultSink  # 结构化结果推送 WebSocket/HTTP
-│   ├── MjpegSink       # MJPEG dev/debug
-│   └── RtspSink        # (预留接口，二期)
-└── PyNode (nanobind)   # Python 自定义业务节点基类
+NodeBase (C++)                    # 提供: name, state, queues, stats, set_param, 生命周期管理
+├── SourceNode (抽象中间类)        # 主动产生帧，重写 worker_loop，持有 SourceConfig
+│   ├── FileSource               # 视频文件 / 图片文件
+│   └── StreamSource             # RTSP / 摄像头
+├── ProcessNode (抽象中间类)       # 被动消费帧，从 input_queue 取帧 → process() → output_queue
+│   ├── InferNode                # 通用推理节点（持有 IExecContext × N workers）
+│   │   ├── DetectorNode         # 目标检测（内置 bbox 后处理）
+│   │   ├── ClassifierNode       # 图像分类（帧内 batch crop）
+│   │   ├── SegmentNode          # 实例分割
+│   │   └── TrackerNode          # 追踪（ByteTrack，纯 CPU）
+│   └── VisualizeNode            # 可视化绘制（bbox/label/track_id 叠加到 image）
+├── SinkNode (抽象中间类)          # 只读消费帧，不修改 Frame
+│   ├── WebRTCSink               # WebRTC 实时预览（核心）
+│   ├── JsonResultSink           # 结构化结果推送 WebSocket/HTTP
+│   ├── MjpegSink               # MJPEG dev/debug
+│   └── RtspSink                # (预留接口，二期)
+└── PyNode (nanobind)            # Python 自定义业务节点基类
 ```
+
+**节点驱动模式差异**：
+- `SourceNode`：主动产生帧。重写 `source_worker_loop()`，不走 `process()` 接口。循环解码 → push 到 output_queue。
+- `ProcessNode`：被动消费帧。基类 `worker_loop()` 从 input_queue pop → 调用子类 `process(Frame&)` → push 到 output_queue。
+- `SinkNode`：被动消费帧，只读不写。
+
+**DAG 拓扑支持**：
+- **支持合并（多对一）**：多个 SourceNode 的 output_queue 指向同一个下游节点的 input_queue。BoundedQueue 支持多生产者并发 push，Frame 通过 move 入队，零拷贝。典型场景：多路视频流 → 同一个 DetectorNode。
+- **不支持分叉（一对多）**：Frame 是 move-only 的，无法同时给多个下游。如需"预览 + 推理并行"，使用多条独立 Pipeline 共享模型（通过 ModelRegistry）。
+- `stream_id`（Frame 字段）区分多路视频帧来源，下游节点可据此做流级别的逻辑区分。
+
+**合并拓扑下的停止机制**：
+- Pipeline 追踪每个共享 input_queue 连接了哪些上游 Source
+- 只有当所有连接的 Source 都结束后，才 stop 该共享队列
+- 单个 Source 结束不会影响其他 Source 继续向同一队列 push
 
 #### 5.2.2 SourceNode 配置
 
@@ -343,8 +362,17 @@ struct SourceConfig {
     std::string    uri;            // 文件路径、RTSP URL、设备号
     DecodeMode     decode_mode = DecodeMode::AUTO;
     int            gpu_device   = 0;    // GPU 设备号（多卡场景）
+    int64_t        stream_id    = 0;    // 流标识符，多路场景下区分帧来源
     size_t         queue_capacity = 16; // 输出队列容量
     OverflowPolicy overflow_policy = OverflowPolicy::DROP_OLDEST;
+
+    // 播放策略
+    bool           loop = false;           // 播放完后是否循环（视频/图片）
+    int            skip_frames = 0;        // 每N帧取1帧（0=不跳帧）
+
+    // 流容错（仅 StreamSource 使用）
+    int            max_retries = 5;        // 拉流失败最大重试次数（-1=无限重试）
+    int            retry_interval_ms = 3000; // 重试间隔毫秒
 };
 ```
 
@@ -385,7 +413,7 @@ frame.image ──────►  读 image        读 image+         读 detec
 | `DetectorNode` | `image` | `detections[]`（bbox, coarse class_id, confidence） | YOLOv8 检测，class_id 为模型原始类别 |
 | `ClassifierNode` | `image`, `detections[]` | `detections[i].class_id`, `detections[i].confidence` | 对每个 detection 的 bbox crop 做细粒度分类，**覆盖** class_id 与 confidence |
 | `TrackerNode` | `detections[]` | `tracks[]`, `detections[i].track_id` | ByteTrack 关联，写入轨迹 ID |
-| `PyNode` | 任意字段 | `user_data` | Python 业务节点，结果挂载到 user_data |
+| `PyNode` | 任意字段 | `user_data["key"]` | Python 业务节点，结果按 key 挂载到 user_data map |
 | `SinkNode` | 任意字段 | — | 只读，不修改 Frame |
 
 **禁止**：节点内不得替换整个 `frame.image`（会泄漏 GPU 内存）；不得拷贝 Frame（编译期已通过 `= delete` 阻止）。
@@ -400,7 +428,7 @@ struct Frame {
     Tensor   image;            // GPU / CPU tensor，含 IAllocator 管理的内存
     std::vector<Detection> detections;  // 检测结果，由 DetectorNode 填充
     std::vector<Track>     tracks;      // 追踪结果，由 TrackerNode 填充
-    std::any               user_data;  // Python 业务节点附加数据，所有权归 Frame
+    std::unordered_map<std::string, std::any> user_data;  // Python 业务节点附加数据，按 key 隔离，多节点互不干扰
 
     // 序列化钩子（预留，用于未来跨进程/跨机传输）
     std::vector<uint8_t> serialize() const;
@@ -408,7 +436,7 @@ struct Frame {
 };
 // 内存所有权：
 // - image.data 由 image.allocator 管理，Frame 析构时自动释放
-// - user_data 由 std::any 管理，Python 侧持有引用时需保证生命周期
+// - user_data 由 map 管理，各 PyNode 通过不同 key 挂载数据，互不覆盖
 ```
 
 Detection 与 Track 结构：
@@ -625,6 +653,12 @@ class InferError : public std::runtime_error {
 public:
     explicit InferError(const std::string& reason);
 };
+
+class StreamError : public std::runtime_error {
+public:
+    explicit StreamError(const std::string& uri, const std::string& reason);
+    const std::string& uri() const;
+};
 ```
 
 #### 5.2.8 ControlChannel（管理 API + 参数热更）
@@ -777,16 +811,25 @@ public:
 
 - 修改文件列表
   - src/core/node_base.h / node_base.cpp
+  - src/core/source_node.h / source_node.cpp（新增 SourceNode 中间抽象类）
   - src/core/pipeline.h / pipeline.cpp
   - src/core/pipeline_builder.h
   - tests/unit/cpp/test_pipeline_dag.cpp
 - 实现的类/函数
-  - class NodeBase：process(Frame&)、set_param(name, val)、input_queue()、output_queue()
+  - class NodeBase：name, state, queues, stats, set_param(name, val)、生命周期管理
+  - class SourceNode : public NodeBase（抽象中间类）：source_worker_loop()、SourceConfig
+  - class ProcessNode : public NodeBase（抽象中间类）：process(Frame&)、worker_loop + input_queue
+  - class SinkNode : public NodeBase（抽象中间类）：只读消费
   - class Pipeline：add_node()、connect(a, b)、start()、stop()、状态机
   - class PipelineBuilder：>> 运算符重载
+  - 合并拓扑：多个 Source 的 output_queue 可指向同一个下游 input_queue（多生产者单消费者）
+  - 停止机制：队列停止级联（Source 结束 → output_queue_.stop() → 下游检测 stopped_and_empty() → 自停 → 级联）
+  - 合并场景停止：Pipeline 追踪 source→queue 映射，所有 Source 结束后才 stop 共享队列
 - 验收标准
-  - Mock 节点组成的 DAG（Source→Filter→Sink）能跑 1000 帧，无丢帧（BLOCK 模式）
+  - Mock 节点组成的线性链（Source→Filter→Sink）能跑 1000 帧，无丢帧（BLOCK 模式）
+  - 合并拓扑：3 个 MockSource → 1 个 MockSink，各 Source 的帧通过 stream_id 区分，全部到达 Sink
   - stop() 调用后所有节点线程在 1s 内退出
+  - 合并场景停止：Source1 先结束不影响 Source2 继续 push
 - 测试方法
   - Google Test + Mock 节点，需 GPU 环境
 - 测试代码骨架
@@ -1375,9 +1418,9 @@ public:
 | ID | 任务 | 阶段 | 优先级 | 状态 | 依赖 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | T0.1 | 目录结构与 CMake 配置 | P0 | P0 | [x] | — |
-| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [x] | T0.1 |
+| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [ ] | T0.1 | Frame.user_data 需从 std::any 改为 map<string, any> |
 | T0.3 | 日志系统初始化 | P0 | P0 | [x] | T0.1 |
-| T1.1 | 节点基类与 DAG | P1 | P0 | [x] | T0.2 |
+| T1.1 | 节点基类与 DAG | P1 | P0 | [ ] | T0.2 | 需要：SourceNode 中间抽象类 + 合并拓扑支持 + SourceConfig 扩展 |
 | T1.2 | PipelineManager + 生命周期 | P1 | P0 | [x] | T1.1 |
 | T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [x] | T0.2 |
 | T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
@@ -1413,6 +1456,7 @@ public:
 | GPU/CUDA 错误 | 抛出 `CudaError`，携带错误码 | `cudaMalloc` 失败 |
 | 模型加载错误 | 抛出 `ModelLoadError` | engine 文件损坏 |
 | 推理错误 | 抛出 `InferError` | 输入 shape 不匹配 |
+| 视频流错误 | 抛出 `StreamError`，携带 URI | 拉流失败超过重试次数 |
 
 **异常基类层次**：
 
@@ -1427,6 +1471,7 @@ class NotFoundError : public VisionPipeError { /* ... */ };
 class CudaError : public VisionPipeError { /* ... */ };
 class ModelLoadError : public VisionPipeError { /* ... */ };
 class InferError : public VisionPipeError { /* ... */ };
+class StreamError : public VisionPipeError { /* ... */ };
 ```
 
 #### Python ↔ C++ 异常穿透
@@ -1440,6 +1485,7 @@ NotFoundError                 →  visionpipe.NotFoundError
 CudaError                     →  visionpipe.CudaError
 ModelLoadError                →  visionpipe.ModelLoadError
 InferError                    →  visionpipe.InferError
+StreamError                   →  visionpipe.StreamError
 std::exception                →  RuntimeError
 未知异常                       →  RuntimeError (wrapped)
 ```

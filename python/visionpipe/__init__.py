@@ -77,6 +77,8 @@ MjpegSinkConfig = _ext.MjpegSinkConfig
 MjpegSink = _ext.MjpegSink
 WebRTCSinkConfig = _ext.WebRTCSinkConfig
 WebRTCSink = _ext.WebRTCSink
+AnnotatorConfig = _ext.AnnotatorConfig
+AnnotatorNode = _ext.AnnotatorNode
 
 
 def _node_rshift(self: NodeBase, other: NodeBase) -> PipelineBuilder:
@@ -150,4 +152,6 @@ __all__ = [
     "MjpegSink",
     "WebRTCSinkConfig",
     "WebRTCSink",
+    "AnnotatorConfig",
+    "AnnotatorNode",
 ]
