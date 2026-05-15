@@ -1,8 +1,8 @@
 # Spec Review Progress
 
 ## Status
-Last reviewed: Phase 3
-Next phase: Phase 4
+Last reviewed: Phase 4
+Next phase: Phase 5
 
 ## Confirmed Phases
 
@@ -61,6 +61,26 @@ Next phase: Phase 4
 - YAML CustomNode 自动导入：**不匹配** — 不支持
 - T3.1/T3.2/T3.3 全部标记为未完成
 
+### Phase 4: 管理 API + 前端交付（已确认）
+- **4-A 管理 API** → aiohttp 同进程嵌入；分离生命周期（create/start/stop/delete）；新增 `GET /pipelines/{id}/nodes` 返回 per-node NodeStats
+- **4-B WebRTC Sink** → libdatachannel + NVENC H.264 + Python signaling；单视角切换（Annotator enable/disable，不需要分叉）
+- **4-C 控制通道** → 通用 WebSocket `/ws/{id}/control`（type+payload 格式），承载 ROI + 任意 set_param 转发
+- **4-D JsonResultSink** → 独立 WebSocket `/ws/{id}/results`（与 control 分离，避免 backpressure 互影响）
+- **4-D MjpegSink** → 保留作为调试/降级方案，默认 enabled=false，通过 set_param 运行时开启
+- **NodeStats 补齐** → fps / latency_ms / frames_processed / errors / state（NodeState: INIT/RUNNING/STOPPED/ERROR）
+- **SinkNode 基类** → 统一提供 `enabled` 属性（默认 true），MjpegSink 覆盖为 false
+
+#### 代码验证结果
+- 管理 REST API (aiohttp)：基础实现存在，但缺少分离生命周期（start/stop 独立端点）和 nodes 接口
+- WebRTC Sink (libdatachannel + NVENC)：匹配 ✓
+- WebSocket 控制通道：**部分匹配** — 只处理 ROI，未支持通用 set_param 转发
+- JsonResultSink：匹配 ✓（独立 BoundedQueue）
+- MjpegSink：**部分匹配** — 功能实现但无 enabled 开关
+- NodeStats：**部分匹配** — 有 fps/processed_count/error_count，缺 latency_ms 和 state
+- SinkNode 基类：**不匹配** — 无独立基类，Sink 节点直接继承 NodeBase + is_sink()
+- Pipeline 生命周期分离 (create/start/stop/destroy)：匹配 ✓
+- T4.1/T4.2/T4.3/T4.4 全部标记为未完成（需 rework 以匹配规范）
+
 ## Cross-Phase Dependencies
 
 - Phase 1 合并拓扑 + Phase 0 Frame move-only：兼容（多生产者各自 move 到共享队列，零拷贝）
@@ -73,6 +93,12 @@ Next phase: Phase 4
 - Phase 3 CUDA IPC ← Phase 2 CudaAllocator（分配的显存支持 IPC handle）
 - Phase 3 合并语法 ← Phase 1 合并拓扑（多 Source 共享 input_queue）
 - Phase 3 run(block=False) ← Phase 1 停止机制（队列级联停止）
+- Phase 4 SinkNode 基类 ← Phase 1 NodeBase（SinkNode 继承 NodeBase，新增 enabled 属性）
+- Phase 4 NodeStats.state ← Phase 1 NodeBase 生命周期（INIT/RUNNING/STOPPED/ERROR 状态机）
+- Phase 4 通用 set_param 转发 ← Phase 1 NodeBase::set_param（WebSocket 只是暴露已有接口）
+- Phase 4 单视角切换 ← Phase 1 不支持分叉（通过 Annotator enable/disable 而非 DAG 分叉）
+- Phase 4 REST create/start/stop/delete ← Phase 1 PipelineManager 生命周期（已分离）
+- Phase 4 JsonResultSink 独立 WS ← Phase 0 Frame detections/tracks 字段（序列化为 JSON）
 
 ## Notes
 
@@ -80,3 +106,4 @@ Next phase: Phase 4
 - 2026-05-14: Phase 1 确认，发现 SourceNode 中间类/合并支持/SourceConfig 扩展/StreamError 均未实现，T1.1 标记为 [ ]
 - 2026-05-14: Phase 2 确认，发现 InferNode batch/ClassifierNode 双模式/Frame.classifications/FileSource 继承均需 rework，T2.2a/T2.3/T2.4/T2.5 标记为 [ ]
 - 2026-05-15: Phase 3 确认，新增 CustomNode 子进程架构（3-D）和 DSL 重构（3-C），T3.1/T3.2/T3.3 全部标记为 [ ]
+- 2026-05-15: Phase 4 确认，关键决策：分离生命周期、通用控制通道、JsonResult 独立 WS、MjpegSink 默认关闭、SinkNode 基类统一 enabled、NodeStats 补齐 latency_ms+state。T4.1/T4.2/T4.3/T4.4 标记为 [ ]

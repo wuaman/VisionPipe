@@ -339,7 +339,23 @@ NodeBase (C++)                    # 提供: name, state, queues, stats, set_para
 **节点驱动模式差异**：
 - `SourceNode`：主动产生帧。重写 `source_worker_loop()`，不走 `process()` 接口。循环解码 → push 到 output_queue。
 - `ProcessNode`：被动消费帧。基类 `worker_loop()` 从 input_queue pop → 调用子类 `process(Frame&)` → push 到 output_queue。
-- `SinkNode`：被动消费帧，只读不写。
+- `SinkNode`：被动消费帧，只读不写。基类统一提供 `enabled` 属性（默认 true），可通过 `set_param("enabled", false)` 运行时关闭/开启。MjpegSink 默认 `enabled=false`。
+
+**NodeStats 结构**：
+
+```cpp
+enum class NodeState { INIT, RUNNING, STOPPED, ERROR };
+
+struct NodeStats {
+    double   fps;               // 最近 N 秒的平均处理 FPS
+    double   latency_ms;        // 平均处理延迟（ms/frame）
+    uint64_t frames_processed;  // 累计处理帧数
+    uint64_t errors;            // 累计错误数
+    NodeState state;            // 节点运行状态
+};
+```
+
+通过 `NodeBase::stats()` 方法获取，`GET /pipelines/{id}/nodes` 接口返回所有节点的 NodeStats。
 
 **DAG 拓扑支持**：
 - **支持合并（多对一）**：多个 SourceNode 的 output_queue 指向同一个下游节点的 input_queue。BoundedQueue 支持多生产者并发 push，Frame 通过 move 入队，零拷贝。典型场景：多路视频流 → 同一个 DetectorNode。
@@ -666,8 +682,24 @@ public:
 #### 5.2.8 ControlChannel（管理 API + 参数热更）
 
 - 内嵌 aiohttp 协程服务，与 C++ Pipeline 同进程运行，监听独立端口（默认 8080）
-- REST 接口：POST /pipelines、GET /pipelines、DELETE /pipelines/{id}、POST /pipelines/{id}/params、GET /pipelines/{id}/health
-- WebSocket 接口 /ws/{pipeline_id}/control：接收 ROI 坐标、阈值等实时参数
+- REST 接口（分离生命周期）：
+  - POST /pipelines — 创建 pipeline（body: YAML 或 JSON spec），返回 id，状态=CREATED
+  - GET /pipelines — 列表（含状态）
+  - POST /pipelines/{id}/start — 启动
+  - POST /pipelines/{id}/stop — 停止（可重启）
+  - DELETE /pipelines/{id} — 销毁（必须先 stop）
+  - POST /pipelines/{id}/params — 参数热更（body: {node_id, param_name, value}）
+  - GET /pipelines/{id}/health — 返回各节点 QueueStats + FPS
+  - GET /pipelines/{id}/nodes — 返回 per-node 详细 metrics（NodeStats）
+- WebSocket 接口：
+  - /ws/{pipeline_id}/control — 通用控制通道（双向，低频）
+    - 消息格式：`{type: "roi"|"set_param"|"ping", payload: {...}}`
+    - roi payload: `{polygons: [[x,y], ...], coord: "normalized"}`
+    - set_param payload: `{node_id: "det", param_name: "threshold", value: 0.5}`
+    - 响应：`{type: "ack"|"error"|"pong", ...}`
+  - /ws/{pipeline_id}/results — 结构化结果推送（单向，高频，服务端→前端）
+    - 每帧推送 detections/tracks 的 JSON 序列化
+    - 与 control 通道分离，避免 backpressure 互相影响
 - C++ 层 NodeBase::set_param(name, value) 使用 std::atomic 或 double-buffer，下一帧原子生效
 
 ---
@@ -1369,7 +1401,7 @@ public:
 ---
 #### Phase 4：管理 API + 前端交付（第 13-15 周）
 
-目的：完成 REST 管理 API、WebRTC 视频流、WebSocket 控制通道、ROI 热更、结构化结果推送。
+目的：完成 REST 管理 API（分离生命周期）、WebRTC 视频流、通用 WebSocket 控制通道、ROI 热更、结构化结果推送（独立 WS）、节点状态监控接口。
 
 任务 4.1：内嵌管理 REST API
 
@@ -1378,14 +1410,19 @@ public:
   - python/visionpipe/server/schemas.py
   - tests/integration/python/test_management_api.py
 - 实现的类/函数
-  - POST /pipelines（body: YAML 或 JSON pipeline spec）
-  - GET /pipelines
-  - DELETE /pipelines/{id}
-  - GET /pipelines/{id}/health（返回各节点 QueueStats）
+  - POST /pipelines（body: YAML 或 JSON pipeline spec）— 创建，状态=CREATED
+  - POST /pipelines/{id}/start — 启动
+  - POST /pipelines/{id}/stop — 停止（可重启）
+  - GET /pipelines — 列表（含状态）
+  - DELETE /pipelines/{id} — 销毁（必须先 stop）
+  - GET /pipelines/{id}/health（返回各节点 QueueStats + FPS）
+  - GET /pipelines/{id}/nodes（返回 per-node NodeStats：fps/latency_ms/frames_processed/errors/state）
   - POST /pipelines/{id}/params（body: {node_id, param_name, value}）
 - 验收标准
-  - E2E 测试：HTTP 创建→启动→查询→停止全流程 200 OK
+  - E2E 测试：HTTP 创建→启动→查询→停止→销毁全流程 200 OK
   - health 接口返回正确的 FPS 和队列占用率
+  - nodes 接口返回所有节点的 NodeStats，字段完整
+  - 未 stop 直接 DELETE 返回 409 Conflict
 - 测试方法
   - pytest + httpx，需 GPU
 
@@ -1396,8 +1433,8 @@ public:
   - python/visionpipe/server/signaling.py
   - tests/e2e/test_webrtc_stream.py
 - 实现的类/函数
-  - class WebRTCSink : public NodeBase（libdatachannel，NVENC H.264）
-  - Python signaling server（SDP offer/answer via WebSocket）
+  - class WebRTCSink : public SinkNode（libdatachannel，NVENC H.264）
+  - Python signaling server（SDP offer/answer via WebSocket /ws/{id}/webrtc）
 - 验收标准
   - 浏览器（Chrome/Firefox）能打开页面看到实时视频流
   - 端到端延迟（局域网）<300ms
@@ -1411,12 +1448,15 @@ public:
   - src/nodes/infer/detector_node.cpp（set_param ROI 实现）
   - tests/integration/python/test_roi_hotupdate.py
 - 实现的类/函数
-  - WebSocket endpoint /ws/{pipeline_id}/control
-  - ROI 消息协议：{type: "roi", polygons: [[x,y], ...], coord: "normalized"}
+  - WebSocket endpoint /ws/{pipeline_id}/control（通用控制通道）
+  - 消息格式：{type: "roi"|"set_param"|"ping", payload: {...}}
+  - ROI payload：{polygons: [[x,y], ...], coord: "normalized"}
+  - set_param payload：{node_id, param_name, value} — 转发到对应节点的 set_param()
   - DetectorNode::set_param("roi", polygons) 原子写（double-buffer）
 - 验收标准
   - 发送 ROI 后，下一帧（≤40ms @25fps）检测结果只含 ROI 内目标
-  - 并发发送 ROI 不 crash，原子性保证
+  - 通用 set_param 可修改任意节点参数（如 threshold、enabled）
+  - 并发发送不 crash，原子性保证
 - 测试方法
   - 集成测试：构造测试帧，断言帧 N+1 输出变化
 
@@ -1425,13 +1465,16 @@ public:
 - 修改文件列表
   - src/nodes/sink/json_result_sink.h / .cpp
   - src/nodes/sink/mjpeg_sink.h / .cpp
+  - src/nodes/sink/sink_node.h（SinkNode 基类，提供 enabled 属性）
   - tests/integration/cpp/test_sinks.cpp
 - 实现的类/函数
-  - class JsonResultSink：每帧序列化 detections/tracks → WebSocket 推送
-  - class MjpegSink：JPEG 编码 → multipart HTTP stream（/mjpeg/{pipeline_id}）
+  - class SinkNode : public NodeBase（抽象中间类，统一 enabled 属性）
+  - class JsonResultSink : public SinkNode — 每帧序列化 detections/tracks，通过独立 WebSocket /ws/{id}/results 推送
+  - class MjpegSink : public SinkNode — JPEG 编码 → multipart HTTP stream（/mjpeg/{pipeline_id}），默认 enabled=false
 - 验收标准
   - JsonResultSink 输出可被 json::parse 解析，字段完整
-  - MjpegSink 在浏览器 <img> 标签可直接播放
+  - MjpegSink 默认关闭，set_param("enabled", true) 后浏览器 <img> 标签可直接播放
+  - SinkNode enabled=false 时不消耗 CPU/GPU 资源（跳过处理）
 - 测试方法
   - 集成测试
 
@@ -1500,10 +1543,10 @@ public:
 | T3.1 | nanobind 绑定核心类 + DSL 重构 | P3 | P0 | [ ] | T2.3、T2.4 | 需要：>> 返回 Pipeline、合并语法、run(block)/stop() API |
 | T3.2 | CustomNode 子进程架构 | P3 | P0 | [ ] | T3.1 | 需要：ProcessProxyNode + CustomNode + FrameView + IPC + subprocess |
 | T3.3 | YAML 导出/导入 + CustomNode 支持 | P3 | P1 | [ ] | T3.1 | 需要：CustomNode 序列化（module/class 自动导入） |
-| T4.1 | 内嵌管理 REST API | P4 | P0 | [x] | T3.1 |
-| T4.2 | WebRTC Sink | P4 | P0 | [x] | T3.1 |
-| T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [x] | T4.1、T4.2 |
-| T4.4 | JsonResultSink + MjpegSink | P4 | P0 | [x] | T3.1 |
+| T4.1 | 内嵌管理 REST API | P4 | P0 | [ ] | T3.1 | 需要：分离生命周期（create/start/stop/delete）+ 新增 GET /nodes 接口 + NodeStats 补齐 latency_ms/state |
+| T4.2 | WebRTC Sink | P4 | P0 | [ ] | T3.1 | 需要：继承 SinkNode（非 NodeBase） |
+| T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [ ] | T4.1、T4.2 | 需要：通用 set_param 消息转发（不仅 ROI） |
+| T4.4 | JsonResultSink + MjpegSink | P4 | P0 | [ ] | T3.1 | 需要：SinkNode 基类 + enabled 属性 + MjpegSink 默认关闭 + JsonResult 独立 WS |
 | T5.1 | 多 Pipeline 并发集成测试 | P5 | P0 | [x] | T4.1 |
 | T5.2 | 性能 benchmark + 调优 | P5 | P0 | [ ] | T5.1 |
 | T5.3 | 文档与 Demo | P5 | P1 | [ ] | T5.2 |
