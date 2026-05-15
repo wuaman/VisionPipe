@@ -1259,9 +1259,45 @@ public:
 ---
 #### Phase 3：Python 绑定 + DSL（第 10-12 周）
 
-目的：Python 层可编排和运行完整 pipeline，用户能写自定义业务节点。
+目的：Python 层可编排和运行完整 pipeline，用户能写自定义业务节点（独立进程，真并行）。
 
-任务 3.1：nanobind 绑定核心类
+##### 设计决策（已确认）
+
+**3-A 绑定粒度**：绑定所有核心类 + PipelineBuilder、PipelineConfig、PipelineStats、NodeStats、QueueStats、AnnotatorNode、MockModelEngine。
+
+**3-B GIL 管理策略**：
+- `Pipeline.run()` / `stop()` 释放 GIL（`call_guard<gil_scoped_release>`）
+- PyNode C++ 回调时获取 GIL（`gil_scoped_acquire`）
+- Frame 传递给 Python 时用 `rv_policy::reference`（零拷贝引用）
+
+**3-C DSL 设计**：
+- `>>` 直接返回 Pipeline 对象（去掉 `.build()` 步骤）
+- 合并语法：`[src1, src2] >> det` 表示多 source 合并到同一下游
+- 公开 API：`run(block=False, **config)` + `stop()`
+  - `run(block=False)`：启动后台运行，立刻返回（默认，适合 Web 服务 / RTSP 流）
+  - `run(block=True)`：启动并阻塞直到所有 source 自然结束（适合脚本 / 文件视频）
+  - `stop(drain=True)`：优雅停止
+- PipelineConfig 通过 Pipeline 属性或 `run()` 参数传入
+
+**3-D CustomNode 子进程架构**：
+- 用户面向 `CustomNode` 基类，重写 `on_frame(frame: FrameView)`
+- `FrameView` 安全视图，process 结束后自动失效（防止悬垂引用）
+- 默认 `process_mode = "subprocess"`：每个 CustomNode 跑独立进程（独立 GIL，真并行）
+- 可选 `process_mode = "inline"`：同进程回调（极轻量逻辑，省 IPC 开销）
+- C++ 侧新增 `ProcessProxyNode`（继承 NodeBase），负责 IPC 通道管理
+- IPC 通信：Unix Domain Socket 传 metadata + CUDA IPC 零拷贝共享 GPU tensor
+- Frame 始终留在 C++ 主进程，只传 metadata 副本给子进程
+- 提供 `setup()` / `teardown()` 生命周期钩子
+- 子进程崩溃自动重启，不影响主 pipeline
+
+**3-E YAML 序列化**：
+- `pipeline.export_yaml(path)` / `Pipeline.load_yaml(path)`
+- CustomNode 序列化：记录 `module`、`class`、`process_mode`、用户自定义 config
+- `load_yaml` 可自动 import 模块、实例化 CustomNode
+
+##### 任务列表
+
+任务 3.1：nanobind 绑定核心类 + DSL 重构
 
 - 修改文件列表
   - python/bindings/bind_pipeline.cpp
@@ -1269,33 +1305,51 @@ public:
   - python/bindings/bind_frame.cpp
   - python/visionpipe/__init__.py
   - tests/unit/python/test_bindings.py
+  - tests/unit/python/test_dsl.py
 - 实现的类/函数
-  - 绑定：Pipeline、PipelineManager、Frame、Detection、Track
-  - 绑定：DecodeMode、SourceConfig、RtspSource、FileSource、DetectorNode、ClassifierNode、SegmentNode、ByteTrackNode、WebRTCSink、JsonResultSink、MjpegSink
-  - >> 运算符 Python 侧重载
+  - 绑定：Pipeline、PipelineManager、Frame、Detection、Track、所有 Node 类型、Config 类型
+  - `>>` 运算符：`NodeBase.__rshift__` 直接返回 Pipeline（非 PipelineBuilder）
+  - 合并语法：`list.__rshift__` 或 Pipeline 接受 list 参数，`[src1, src2] >> det` 创建合并拓扑
+  - `Pipeline.run(block=False, **config)`：统一入口，`block=False` 后台运行，`block=True` 阻塞
+  - `Pipeline.stop(drain=True)`：优雅停止
+  - PipelineConfig 通过 Pipeline 属性或 `run()` kwargs 传入
 - 验收标准
-  - Python 中 src >> det >> sink; pipe.run() 能运行完整 pipeline
+  - `([src] >> det >> sink).run()` 能运行完整 pipeline
+  - `[src1, src2] >> det >> sink` 合并拓扑正确建立
+  - `run(block=True)` 文件视频跑完自动返回
+  - `run(block=False)` 立刻返回，`stop()` 优雅停止
   - Frame 对象可在 Python 中读取 detections 列表
 - 测试方法
   - pytest，集成测试需 GPU
 
-任务 3.2：PyNode 自定义业务节点
+任务 3.2：CustomNode 子进程架构
 
 - 修改文件列表
-  - src/core/py_node.h / py_node.cpp
-  - python/visionpipe/py_node.py
-  - tests/unit/python/test_py_node.py
+  - src/core/process_proxy_node.h / process_proxy_node.cpp
+  - python/visionpipe/custom_node.py
+  - python/visionpipe/frame_view.py
+  - python/visionpipe/ipc/worker.py
+  - python/visionpipe/ipc/protocol.py
+  - tests/unit/python/test_custom_node.py
+  - tests/integration/python/test_subprocess_node.py
 - 实现的类/函数
-  - class PyNode（C++ 端，nanobind 回调 Python process 方法）
-  - Python 基类 class PyNode（用户继承，重写 process(frame: Frame) -> Frame）
-  - GIL acquire/release 正确处理
+  - C++ `ProcessProxyNode`：继承 NodeBase，IPC 通道管理，Frame metadata 序列化/反序列化
+  - Python `CustomNode` 基类：`on_frame(frame: FrameView)`、`setup()`、`teardown()`
+  - `FrameView`：安全视图，process 结束后自动失效
+  - `Config` 内部类：`process_mode`（subprocess/inline）
+  - IPC worker loop：子进程端接收 metadata + CUDA IPC handle，调用 `on_frame`，返回修改
+  - 子进程崩溃检测 + 自动重启
 - 验收标准
-  - 自定义 PyNode 能修改 frame.user_data 并传递到下游
-  - PyNode 中抛异常不 crash C++ 线程，异常被捕获并记录日志
+  - subprocess 模式：CustomNode 在独立进程运行，修改 user_data 传回主进程
+  - inline 模式：同进程回调，行为与旧 PyNode 一致
+  - 多个 subprocess CustomNode 真正并行（不受 GIL 限制）
+  - 子进程抛异常不 crash 主 pipeline，异常被捕获并记录日志
+  - 子进程被 kill 后自动重启，pipeline 继续运行
+  - FrameView 在 on_frame 外访问时抛出 RuntimeError
 - 测试方法
-  - pytest，Mock C++ pipeline
+  - pytest + multiprocessing，需 GPU（CUDA IPC 测试）
 
-任务 3.3：YAML 导出/导入
+任务 3.3：YAML 导出/导入 + CustomNode 支持
 
 - 修改文件列表
   - python/visionpipe/serialization.py
@@ -1303,11 +1357,14 @@ public:
 - 实现的类/函数
   - Pipeline.export_yaml(path) / Pipeline.load_yaml(path)
   - pydantic 模型：PipelineSpec、NodeSpec、EdgeSpec
+  - CustomNode 序列化：NodeSpec 增加 `module`、`class_name`、`process_mode` 字段
+  - load_yaml 自动 import 模块、实例化 CustomNode
 - 验收标准
   - Python DSL 构建的 pipeline export → YAML → load，再次运行结果与原始一致
   - YAML 格式校验（pydantic）拦截非法节点类型
+  - CustomNode 可通过 YAML 自动加载（指定 module + class）
 - 测试方法
-  - pytest，无 GPU
+  - pytest，无 GPU（序列化逻辑不需要 GPU）
 
 ---
 #### Phase 4：管理 API + 前端交付（第 13-15 周）
@@ -1440,9 +1497,9 @@ public:
 | T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2a | 需要：InferNode 改为 process_batch 接口 |
 | T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 | 需要：target_classes 双模式 + 结果写入 frame.classifications（非覆盖 detections） |
 | T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 | 需要：Frame 新增 classifications 字段 + InferNode batch 接口 |
-| T3.1 | nanobind 绑定核心类 | P3 | P0 | [x] | T2.3、T2.4 |
-| T3.2 | PyNode 自定义业务节点 | P3 | P0 | [x] | T3.1 |
-| T3.3 | YAML 导出/导入 | P3 | P1 | [x] | T3.1 |
+| T3.1 | nanobind 绑定核心类 + DSL 重构 | P3 | P0 | [ ] | T2.3、T2.4 | 需要：>> 返回 Pipeline、合并语法、run(block)/stop() API |
+| T3.2 | CustomNode 子进程架构 | P3 | P0 | [ ] | T3.1 | 需要：ProcessProxyNode + CustomNode + FrameView + IPC + subprocess |
+| T3.3 | YAML 导出/导入 + CustomNode 支持 | P3 | P1 | [ ] | T3.1 | 需要：CustomNode 序列化（module/class 自动导入） |
 | T4.1 | 内嵌管理 REST API | P4 | P0 | [x] | T3.1 |
 | T4.2 | WebRTC Sink | P4 | P0 | [x] | T3.1 |
 | T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [x] | T4.1、T4.2 |

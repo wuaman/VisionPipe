@@ -1,8 +1,8 @@
 # Spec Review Progress
 
 ## Status
-Last reviewed: Phase 2
-Next phase: Phase 3
+Last reviewed: Phase 3
+Next phase: Phase 4
 
 ## Confirmed Phases
 
@@ -45,6 +45,22 @@ Next phase: Phase 3
 - ClassifierNode 双模式：**不匹配** — 无 target_classes，结果覆盖 detections
 - T2.2a/T2.3/T2.4/T2.5 已标记为未完成
 
+### Phase 3: Python 绑定 + DSL（已确认）
+- **3-A 绑定粒度** → 绑定所有核心类 + PipelineBuilder/PipelineConfig/AnnotatorNode/MockModelEngine 等额外类
+- **3-B GIL 策略** → run()/stop() 释放 GIL；PyNode 回调获取 GIL；Frame 零拷贝引用（rv_policy::reference）
+- **3-C DSL 设计** → `>>` 直接返回 Pipeline（去掉 .build()）；`[src1, src2] >> det` 合并语法；公开 API 为 `run(block=False)` + `stop()`
+- **3-D CustomNode 子进程架构** → 用户面向 CustomNode 基类（on_frame + FrameView）；默认 subprocess 模式（独立进程，真并行）；C++ ProcessProxyNode + IPC（Unix Socket + CUDA IPC）；子进程崩溃自动重启
+- **3-E YAML 序列化** → export_yaml/load_yaml + CustomNode 自动导入（module/class 字段）
+
+#### 代码验证结果
+- nanobind 绑定核心类：基础绑定已实现，但 API 不匹配新规范
+- `>>` 返回 PipelineBuilder 而非 Pipeline：**不匹配**
+- 合并语法 `[src1, src2] >> det`：**不匹配** — 不支持
+- `run(block=False)` API：**不匹配** — 当前 run() 只是 start() 别名
+- CustomNode / ProcessProxyNode / FrameView：**不匹配** — 不存在
+- YAML CustomNode 自动导入：**不匹配** — 不支持
+- T3.1/T3.2/T3.3 全部标记为未完成
+
 ## Cross-Phase Dependencies
 
 - Phase 1 合并拓扑 + Phase 0 Frame move-only：兼容（多生产者各自 move 到共享队列，零拷贝）
@@ -53,9 +69,14 @@ Next phase: Phase 3
 - Phase 2 InferNode process_batch ← Phase 1 InferNode parallel_workers（细化，非冲突）
 - Phase 2 FileSource : SourceNode ← Phase 1 SourceNode 中间抽象类
 - Phase 2 Frame.classifications 新字段 ← Phase 0 Frame 结构体扩展
+- Phase 3 CustomNode subprocess ← Phase 0 Frame move-only（Frame 留主进程，只传 metadata 副本）
+- Phase 3 CUDA IPC ← Phase 2 CudaAllocator（分配的显存支持 IPC handle）
+- Phase 3 合并语法 ← Phase 1 合并拓扑（多 Source 共享 input_queue）
+- Phase 3 run(block=False) ← Phase 1 停止机制（队列级联停止）
 
 ## Notes
 
 - 2026-05-13: Phase 0 确认，发现 user_data 实现与方案不一致，T0.2 标记为 [ ]
 - 2026-05-14: Phase 1 确认，发现 SourceNode 中间类/合并支持/SourceConfig 扩展/StreamError 均未实现，T1.1 标记为 [ ]
 - 2026-05-14: Phase 2 确认，发现 InferNode batch/ClassifierNode 双模式/Frame.classifications/FileSource 继承均需 rework，T2.2a/T2.3/T2.4/T2.5 标记为 [ ]
+- 2026-05-15: Phase 3 确认，新增 CustomNode 子进程架构（3-D）和 DSL 重构（3-C），T3.1/T3.2/T3.3 全部标记为 [ ]
