@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "core/infer_node.h"
 #include "core/frame.h"
@@ -11,61 +12,59 @@ namespace visionpipe {
 
 /// @brief 分类节点配置
 struct ClassifierConfig {
-    int input_width = 224;          ///< 模型输入宽度
-    int input_height = 224;         ///< 模型输入高度
-    int max_batch_size = 32;        ///< 最大帧内 batch 大小
-    size_t workers = 1;             ///< 并行 worker 数量
-    bool normalize_mean_std = true; ///< 是否使用 mean/std 归一化
+    int input_width = 224;
+    int input_height = 224;
+    int max_batch_size = 32;
+    size_t workers = 1;
+    bool normalize_mean_std = true;
+    std::vector<int> target_classes;  ///< 非空=二级分类（筛选匹配的 detections），空=整图分类
 };
 
-/// @brief 分类节点
+/// @brief 分类节点（双模式）
 ///
-/// 对 DetectorNode 输出的每个检测框进行细粒度分类：
-/// 1. 读取 frame.detections
-/// 2. 按 bbox 从 frame.image 裁剪 crop
-/// 3. 所有 crop 打包成 batch 进行推理
-/// 4. 结果回写到 detections[i].class_id 和 confidence
-///
-/// 若 detections 为空，直接透传 frame，不做推理。
+/// 模式 1（二级分类）：target_classes 非空时，筛选 frame.detections 中匹配类别的 bbox，
+///   crop → batch 推理 → 结果写入 frame.classifications。无匹配则透传。
+/// 模式 2（整图分类）：target_classes 为空时，直接对 frame.image 整图推理，
+///   结果写入 frame.classifications（detection_index = -1），不依赖 detections。
 class ClassifierNode : public InferNode {
 public:
-    /// @brief 构造函数
     explicit ClassifierNode(std::shared_ptr<IModelEngine> engine,
                             const ClassifierConfig& config = ClassifierConfig(),
                             const std::string& name = "classifier");
 
-    /// @brief 简化构造函数
     explicit ClassifierNode(std::shared_ptr<IModelEngine> engine,
                             const std::string& name);
 
     ~ClassifierNode() override = default;
 
-    // 禁止拷贝
     ClassifierNode(const ClassifierNode&) = delete;
     ClassifierNode& operator=(const ClassifierNode&) = delete;
 
-    // 允许移动
     ClassifierNode(ClassifierNode&&) noexcept = default;
     ClassifierNode& operator=(ClassifierNode&&) noexcept = default;
 
-    /// @brief 获取配置
     const ClassifierConfig& config() const { return config_; }
 
 protected:
     void infer_frame(IExecContext& ctx, Frame& frame) override;
 
 private:
-    /// @brief 预处理：从 frame 中裁剪 crops 并打包成 batch tensor
-    void preprocess(Frame& frame, Tensor& batch_tensor,
-                    std::vector<int>& valid_crop_indices);
+    void infer_whole_image(IExecContext& ctx, Frame& frame);
+    void infer_crops(IExecContext& ctx, Frame& frame);
 
-    /// @brief 后处理：应用 softmax 并回写到 detections
-    void postprocess(Frame& frame, const Tensor& output,
-                     const std::vector<int>& valid_crop_indices);
+    void preprocess_whole_image(Frame& frame, Tensor& input_tensor);
+    void preprocess_crops(Frame& frame, Tensor& batch_tensor,
+                          std::vector<int>& valid_det_indices);
 
-    /// @brief 裁剪单个 crop 并预处理
+    void postprocess_whole_image(Frame& frame, const Tensor& output);
+    void postprocess_crops(Frame& frame, const Tensor& output,
+                           const std::vector<int>& valid_det_indices);
+
     bool crop_and_preprocess(Frame& frame, const Detection& det,
                              std::vector<float>& crop_data);
+
+    bool matches_target_class(int class_id) const;
+    void get_image_dims(const Frame& frame, int& width, int& height) const;
 
     ClassifierConfig config_;
 };

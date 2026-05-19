@@ -42,7 +42,7 @@ Next phase: (all phases confirmed)
 - T2.2a FileSource 继承：已修复 ✓ — FileSource/RtspSource 继承 SourceNode；SourceConfig 含 Phase 1 字段
 - InferNode batch 机制：**不匹配** — 当前为单帧 infer_frame 接口，无 process_batch
 - Frame.classifications：已修复 ✓ — 新增 Classification 结构体 + classifications 向量（frame.h:40-44, 53）
-- ClassifierNode 双模式：**不匹配** — 无 target_classes，结果覆盖 detections
+- ClassifierNode 双模式：已修复 ✓ — target_classes 非空=二级分类，空=整图分类；结果写入 frame.classifications
 - T2.2a/T2.3/T2.4/T2.5 已标记为未完成
 
 ### Phase 3: Python 绑定 + DSL（已确认）

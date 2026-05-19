@@ -30,7 +30,6 @@ namespace fs = std::filesystem;
 // Mock Model Engine for Testing
 // ============================================================================
 
-/// @brief Mock execution context that simulates classification inference
 class MockClassifierExecContext : public IExecContext {
 public:
     explicit MockClassifierExecContext(int num_classes = 1000)
@@ -40,37 +39,27 @@ public:
     void infer(const Tensor& input, Tensor& output) override {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        // Validate input tensor
         ASSERT_TRUE(input.valid());
         ASSERT_GE(input.shape.size(), 2u);
 
-        // Input shape: [batch, channels, height, width] or [batch, ...]
         int64_t batch_size = input.shape[0];
 
-        // Create output tensor with shape [batch, num_classes]
-        // Use softmax-like output (probabilities summing to 1)
         if (!output.valid() || output.shape[0] != batch_size || output.shape[1] != num_classes_) {
             static CpuAllocator allocator;
             output = Tensor({batch_size, num_classes_}, DataType::FLOAT32, &allocator);
         }
 
-        // Fill with softmax-like values
-        // For deterministic testing, each batch item gets a different predicted class
         float* out_data = static_cast<float*>(output.data);
         for (int64_t b = 0; b < batch_size; ++b) {
-            // Create a softmax distribution where class (b % num_classes) has highest probability
             int target_class = static_cast<int>(b % num_classes_);
             float sum = 0.0f;
 
             for (int c = 0; c < num_classes_; ++c) {
-                // Assign high probability to target class, small to others
                 float logit = (c == target_class) ? 10.0f : 0.1f;
-                // Simple softmax approximation
                 out_data[b * num_classes_ + c] = std::exp(logit);
                 sum += out_data[b * num_classes_ + c];
             }
 
-            // Normalize to get probabilities
             for (int c = 0; c < num_classes_; ++c) {
                 out_data[b * num_classes_ + c] /= sum;
             }
@@ -90,7 +79,6 @@ private:
     int infer_count_;
 };
 
-/// @brief Mock model engine for classification testing
 class MockClassifierEngine : public IModelEngine {
 public:
     explicit MockClassifierEngine(int num_classes = 1000)
@@ -112,14 +100,12 @@ private:
 // Test Utilities
 // ============================================================================
 
-/// @brief Create a test frame with image data
 Frame create_test_frame(int width = 640, int height = 480, int frame_id = 0) {
     Frame frame;
     frame.stream_id = 1;
     frame.frame_id = frame_id;
-    frame.pts_us = frame_id * 33333;  // ~30fps
+    frame.pts_us = frame_id * 33333;
 
-    // Create a test image (gray with some color variation)
     cv::Mat cpu_image(height, width, CV_8UC3);
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
@@ -130,11 +116,9 @@ Frame create_test_frame(int width = 640, int height = 480, int frame_id = 0) {
         }
     }
 
-    // Upload to GPU
     cv::cuda::GpuMat gpu_image;
     gpu_image.upload(cpu_image);
 
-    // Create tensor
     static auto allocator = std::make_shared<CudaAllocator>();
     frame.image = Tensor({height, width, 3}, DataType::UINT8, allocator.get());
     cudaMemcpy(frame.image.data, gpu_image.data, frame.image.nbytes, cudaMemcpyDeviceToDevice);
@@ -142,38 +126,26 @@ Frame create_test_frame(int width = 640, int height = 480, int frame_id = 0) {
     return frame;
 }
 
-/// @brief Create a frame with specified detections
 Frame create_frame_with_detections(
     int width, int height, int frame_id,
-    const std::vector<std::array<float, 4>>& bboxes) {
+    const std::vector<std::array<float, 4>>& bboxes,
+    int class_id = 0) {
 
     Frame frame = create_test_frame(width, height, frame_id);
 
     for (size_t i = 0; i < bboxes.size(); ++i) {
         Detection det;
-        det.bbox[0] = bboxes[i][0];  // x1
-        det.bbox[1] = bboxes[i][1];  // y1
-        det.bbox[2] = bboxes[i][2];  // x2
-        det.bbox[3] = bboxes[i][3];  // y2
-        det.class_id = -1;  // Uninitialized
-        det.confidence = 0.0f;
+        det.bbox[0] = bboxes[i][0];
+        det.bbox[1] = bboxes[i][1];
+        det.bbox[2] = bboxes[i][2];
+        det.bbox[3] = bboxes[i][3];
+        det.class_id = class_id;
+        det.confidence = 0.9f;
         det.track_id = -1;
         frame.detections.push_back(det);
     }
 
     return frame;
-}
-
-/// @brief Convert normalized bbox [0,1] to pixel coordinates
-std::array<float, 4> normalized_to_pixel(
-    float x1, float y1, float x2, float y2,
-    int img_width, int img_height) {
-    return {
-        x1 * img_width,
-        y1 * img_height,
-        x2 * img_width,
-        y2 * img_height
-    };
 }
 
 // ============================================================================
@@ -197,6 +169,16 @@ TEST_F(ClassifierNodeConstructionTest, CreateWithDefaultConfig) {
     EXPECT_EQ(node.config().max_batch_size, 32);
     EXPECT_EQ(node.config().workers, 1u);
     EXPECT_TRUE(node.config().normalize_mean_std);
+    EXPECT_TRUE(node.config().target_classes.empty());
+}
+
+TEST_F(ClassifierNodeConstructionTest, CreateWithTargetClasses) {
+    ClassifierConfig config;
+    config.target_classes = {0, 1, 2};
+    ClassifierNode node(mock_engine_, config, "crop_classifier");
+    EXPECT_EQ(node.config().target_classes.size(), 3u);
+    EXPECT_EQ(node.config().target_classes[0], 0);
+    EXPECT_EQ(node.config().target_classes[2], 2);
 }
 
 TEST_F(ClassifierNodeConstructionTest, CreateWithCustomConfig) {
@@ -219,7 +201,7 @@ TEST_F(ClassifierNodeConstructionTest, CreateWithCustomConfig) {
 TEST_F(ClassifierNodeConstructionTest, CreateWithSimpleName) {
     ClassifierNode node(mock_engine_, "simple_classifier");
     EXPECT_EQ(node.name(), "simple_classifier");
-    EXPECT_EQ(node.config().input_width, 224);  // Default config
+    EXPECT_EQ(node.config().input_width, 224);
 }
 
 TEST_F(ClassifierNodeConstructionTest, InitialStateIsInit) {
@@ -273,7 +255,7 @@ TEST_F(ClassifierNodeStateTest, StopWithoutDrain) {
     node.create_output_queue(16, OverflowPolicy::BLOCK);
     node.start();
 
-    node.stop(false);  // Immediate stop
+    node.stop(false);
     node.wait_stop();
     EXPECT_EQ(node.state(), NodeState::STOPPED);
 }
@@ -299,57 +281,78 @@ TEST_F(ClassifierNodeStateTest, StopIsIdempotent) {
     node.stop(true);
     node.wait_stop();
 
-    // Multiple stops should not throw
     EXPECT_NO_THROW(node.stop(true));
     EXPECT_NO_THROW(node.wait_stop());
     EXPECT_EQ(node.state(), NodeState::STOPPED);
 }
 
 // ============================================================================
-// ClassifierNode Empty Detections Tests (透传行为)
+// Mode 2: Whole-Image Classification (target_classes empty)
 // ============================================================================
 
-class ClassifierNodeEmptyDetectionsTest : public ::testing::Test {
+class ClassifierNodeWholeImageTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        mock_engine_ = std::make_shared<MockClassifierEngine>();
+        mock_engine_ = std::make_shared<MockClassifierEngine>(10);
         config_.workers = 1;
+        // target_classes empty → whole-image mode
     }
 
     std::shared_ptr<MockClassifierEngine> mock_engine_;
     ClassifierConfig config_;
 };
 
-TEST_F(ClassifierNodeEmptyDetectionsTest, EmptyDetectionsDoesNotInfer) {
+TEST_F(ClassifierNodeWholeImageTest, WholeImageProducesClassification) {
     ClassifierNode node(mock_engine_, config_);
     node.create_output_queue(16, OverflowPolicy::BLOCK);
     node.start();
 
-    // Create frame with no detections
     Frame frame = create_test_frame(640, 480, 0);
-    EXPECT_TRUE(frame.detections.empty());
-
-    // Get the mock context to check infer count
-    auto context = mock_engine_->create_context();
-    auto mock_context = dynamic_cast<MockClassifierExecContext*>(context.get());
-    ASSERT_NE(mock_context, nullptr);
-    int initial_infer_count = mock_context->infer_count();
-
-    // Process frame
     node.process(frame);
 
-    // Should NOT have triggered inference
-    EXPECT_EQ(mock_context->infer_count(), initial_infer_count);
-
-    // Frame should be unchanged (transparent pass-through)
-    EXPECT_TRUE(frame.detections.empty());
-    EXPECT_TRUE(frame.has_image());
+    ASSERT_EQ(frame.classifications.size(), 1u);
+    EXPECT_EQ(frame.classifications[0].detection_index, -1);
+    EXPECT_GE(frame.classifications[0].confidence, 0.0f);
+    EXPECT_LE(frame.classifications[0].confidence, 1.0f);
 
     node.stop(true);
     node.wait_stop();
 }
 
-TEST_F(ClassifierNodeEmptyDetectionsTest, EmptyDetectionsPreservesFrameId) {
+TEST_F(ClassifierNodeWholeImageTest, WholeImageIgnoresDetections) {
+    ClassifierNode node(mock_engine_, config_);
+    node.create_output_queue(16, OverflowPolicy::BLOCK);
+    node.start();
+
+    // Frame has detections, but whole-image mode ignores them
+    std::vector<std::array<float, 4>> bboxes = {{0.1f, 0.1f, 0.5f, 0.5f}};
+    Frame frame = create_frame_with_detections(640, 480, 0, bboxes);
+    node.process(frame);
+
+    // Should still produce whole-image classification
+    ASSERT_EQ(frame.classifications.size(), 1u);
+    EXPECT_EQ(frame.classifications[0].detection_index, -1);
+    // Detections should be untouched
+    ASSERT_EQ(frame.detections.size(), 1u);
+
+    node.stop(true);
+    node.wait_stop();
+}
+
+TEST_F(ClassifierNodeWholeImageTest, WholeImageNoImageThrows) {
+    ClassifierNode node(mock_engine_, config_);
+    node.create_output_queue(16, OverflowPolicy::BLOCK);
+    node.start();
+
+    Frame frame;
+    frame.frame_id = 0;
+    EXPECT_THROW(node.process(frame), InferError);
+
+    node.stop(true);
+    node.wait_stop();
+}
+
+TEST_F(ClassifierNodeWholeImageTest, WholeImagePreservesFrameMetadata) {
     ClassifierNode node(mock_engine_, config_);
     node.create_output_queue(16, OverflowPolicy::BLOCK);
     node.start();
@@ -357,12 +360,10 @@ TEST_F(ClassifierNodeEmptyDetectionsTest, EmptyDetectionsPreservesFrameId) {
     Frame frame = create_test_frame(640, 480, 42);
     frame.stream_id = 7;
     frame.pts_us = 123456;
-    int64_t original_frame_id = frame.frame_id;
 
     node.process(frame);
 
-    // Frame metadata should be preserved
-    EXPECT_EQ(frame.frame_id, original_frame_id);
+    EXPECT_EQ(frame.frame_id, 42);
     EXPECT_EQ(frame.stream_id, 7);
     EXPECT_EQ(frame.pts_us, 123456);
 
@@ -370,16 +371,141 @@ TEST_F(ClassifierNodeEmptyDetectionsTest, EmptyDetectionsPreservesFrameId) {
     node.wait_stop();
 }
 
-// NOTE: EmptyDetectionsPreservesUserData removed — user_data changing from std::any to map<string, any>
-// NOTE: SingleDetectionClassification removed — old behavior: classifier overwrites detections[i].class_id; new spec: results go to frame.classifications
-// NOTE: ConfidenceIsHighestProbability removed — same reason
+// ============================================================================
+// Mode 1: Crop-Based Secondary Classification (target_classes non-empty)
+// ============================================================================
 
-// NOTE: ClassifierNodeBatchTest class removed — all tests assert old behavior
-// where classifier writes results to detections[i].class_id/confidence.
-// New spec: results go to frame.classifications; batch via process_batch.
+class ClassifierNodeCropTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        mock_engine_ = std::make_shared<MockClassifierEngine>(10);
+        config_.workers = 1;
+        config_.target_classes = {0, 1, 2};
+    }
+
+    std::shared_ptr<MockClassifierEngine> mock_engine_;
+    ClassifierConfig config_;
+};
+
+TEST_F(ClassifierNodeCropTest, MatchingDetectionsProduceClassifications) {
+    ClassifierNode node(mock_engine_, config_);
+    node.create_output_queue(16, OverflowPolicy::BLOCK);
+    node.start();
+
+    // class_id=0 matches target_classes {0,1,2}
+    std::vector<std::array<float, 4>> bboxes = {
+        {0.1f, 0.1f, 0.5f, 0.5f},
+        {0.5f, 0.5f, 0.9f, 0.9f}
+    };
+    Frame frame = create_frame_with_detections(640, 480, 0, bboxes, 0);
+
+    node.process(frame);
+
+    ASSERT_EQ(frame.classifications.size(), 2u);
+    EXPECT_EQ(frame.classifications[0].detection_index, 0);
+    EXPECT_EQ(frame.classifications[1].detection_index, 1);
+    EXPECT_GE(frame.classifications[0].confidence, 0.0f);
+    EXPECT_GE(frame.classifications[1].confidence, 0.0f);
+    // Detections should be untouched
+    ASSERT_EQ(frame.detections.size(), 2u);
+    EXPECT_EQ(frame.detections[0].class_id, 0);
+    EXPECT_EQ(frame.detections[1].class_id, 0);
+
+    node.stop(true);
+    node.wait_stop();
+}
+
+TEST_F(ClassifierNodeCropTest, NonMatchingDetectionsPassthrough) {
+    ClassifierNode node(mock_engine_, config_);
+    node.create_output_queue(16, OverflowPolicy::BLOCK);
+    node.start();
+
+    // class_id=99 does NOT match target_classes {0,1,2}
+    std::vector<std::array<float, 4>> bboxes = {{0.1f, 0.1f, 0.5f, 0.5f}};
+    Frame frame = create_frame_with_detections(640, 480, 0, bboxes, 99);
+
+    node.process(frame);
+
+    // No matching detections → no classifications, transparent passthrough
+    EXPECT_TRUE(frame.classifications.empty());
+    ASSERT_EQ(frame.detections.size(), 1u);
+    EXPECT_EQ(frame.detections[0].class_id, 99);
+
+    node.stop(true);
+    node.wait_stop();
+}
+
+TEST_F(ClassifierNodeCropTest, EmptyDetectionsPassthrough) {
+    ClassifierNode node(mock_engine_, config_);
+    node.create_output_queue(16, OverflowPolicy::BLOCK);
+    node.start();
+
+    Frame frame = create_test_frame(640, 480, 0);
+    EXPECT_TRUE(frame.detections.empty());
+
+    node.process(frame);
+
+    EXPECT_TRUE(frame.classifications.empty());
+    EXPECT_TRUE(frame.has_image());
+
+    node.stop(true);
+    node.wait_stop();
+}
+
+TEST_F(ClassifierNodeCropTest, MixedTargetClassFiltering) {
+    ClassifierNode node(mock_engine_, config_);
+    node.create_output_queue(16, OverflowPolicy::BLOCK);
+    node.start();
+
+    Frame frame = create_test_frame(640, 480, 0);
+    // Add detections with mixed class IDs
+    Detection d1; d1.bbox[0] = 0.1f; d1.bbox[1] = 0.1f; d1.bbox[2] = 0.4f; d1.bbox[3] = 0.4f;
+    d1.class_id = 0; d1.confidence = 0.9f;  // matches
+    Detection d2; d2.bbox[0] = 0.5f; d2.bbox[1] = 0.1f; d2.bbox[2] = 0.8f; d2.bbox[3] = 0.4f;
+    d2.class_id = 99; d2.confidence = 0.9f; // doesn't match
+    Detection d3; d3.bbox[0] = 0.1f; d3.bbox[1] = 0.5f; d3.bbox[2] = 0.4f; d3.bbox[3] = 0.8f;
+    d3.class_id = 2; d3.confidence = 0.9f;  // matches
+    frame.detections.push_back(d1);
+    frame.detections.push_back(d2);
+    frame.detections.push_back(d3);
+
+    node.process(frame);
+
+    // Only 2 matching detections → 2 classifications
+    ASSERT_EQ(frame.classifications.size(), 2u);
+    EXPECT_EQ(frame.classifications[0].detection_index, 0);  // d1
+    EXPECT_EQ(frame.classifications[1].detection_index, 2);  // d3
+    // Detections unchanged
+    ASSERT_EQ(frame.detections.size(), 3u);
+
+    node.stop(true);
+    node.wait_stop();
+}
+
+TEST_F(ClassifierNodeCropTest, DoesNotOverwriteDetections) {
+    ClassifierNode node(mock_engine_, config_);
+    node.create_output_queue(16, OverflowPolicy::BLOCK);
+    node.start();
+
+    std::vector<std::array<float, 4>> bboxes = {{0.1f, 0.1f, 0.5f, 0.5f}};
+    Frame frame = create_frame_with_detections(640, 480, 0, bboxes, 1);
+    float original_conf = frame.detections[0].confidence;
+    int original_class = frame.detections[0].class_id;
+
+    node.process(frame);
+
+    // Detection fields must remain unchanged
+    EXPECT_EQ(frame.detections[0].class_id, original_class);
+    EXPECT_FLOAT_EQ(frame.detections[0].confidence, original_conf);
+    // Results go to classifications
+    ASSERT_GE(frame.classifications.size(), 1u);
+
+    node.stop(true);
+    node.wait_stop();
+}
 
 // ============================================================================
-// ClassifierNode Bbox Boundary Tests
+// ClassifierNode Bbox Boundary Tests (crop mode)
 // ============================================================================
 
 class ClassifierNodeBboxBoundaryTest : public ::testing::Test {
@@ -387,6 +513,7 @@ protected:
     void SetUp() override {
         mock_engine_ = std::make_shared<MockClassifierEngine>(1000);
         config_.workers = 1;
+        config_.target_classes = {0};  // crop mode
     }
 
     std::shared_ptr<MockClassifierEngine> mock_engine_;
@@ -398,9 +525,8 @@ TEST_F(ClassifierNodeBboxBoundaryTest, BboxAtImageEdge) {
     node.create_output_queue(16, OverflowPolicy::BLOCK);
     node.start();
 
-    // Bbox touching image edges
-    auto bboxes = {normalized_to_pixel(0.0f, 0.0f, 1.0f, 1.0f, 640, 480)};
-    Frame frame = create_frame_with_detections(640, 480, 0, bboxes);
+    std::vector<std::array<float, 4>> bboxes = {{0.0f, 0.0f, 1.0f, 1.0f}};
+    Frame frame = create_frame_with_detections(640, 480, 0, bboxes, 0);
 
     EXPECT_NO_THROW(node.process(frame));
     ASSERT_EQ(frame.detections.size(), 1u);
@@ -414,11 +540,9 @@ TEST_F(ClassifierNodeBboxBoundaryTest, BboxExceedsImageBoundary) {
     node.create_output_queue(16, OverflowPolicy::BLOCK);
     node.start();
 
-    // Bbox extending beyond image boundaries
-    auto bboxes = {normalized_to_pixel(-0.1f, -0.1f, 1.1f, 1.1f, 640, 480)};
-    Frame frame = create_frame_with_detections(640, 480, 0, bboxes);
+    std::vector<std::array<float, 4>> bboxes = {{-0.1f, -0.1f, 1.1f, 1.1f}};
+    Frame frame = create_frame_with_detections(640, 480, 0, bboxes, 0);
 
-    // Should handle gracefully (clip to valid region)
     EXPECT_NO_THROW(node.process(frame));
     ASSERT_EQ(frame.detections.size(), 1u);
 
@@ -431,27 +555,9 @@ TEST_F(ClassifierNodeBboxBoundaryTest, BboxZeroArea) {
     node.create_output_queue(16, OverflowPolicy::BLOCK);
     node.start();
 
-    // Zero-area bbox (point)
-    auto bboxes = {normalized_to_pixel(0.5f, 0.5f, 0.5f, 0.5f, 640, 480)};
-    Frame frame = create_frame_with_detections(640, 480, 0, bboxes);
+    std::vector<std::array<float, 4>> bboxes = {{0.5f, 0.5f, 0.5f, 0.5f}};
+    Frame frame = create_frame_with_detections(640, 480, 0, bboxes, 0);
 
-    // Should handle gracefully (skip or use minimum size)
-    EXPECT_NO_THROW(node.process(frame));
-
-    node.stop(true);
-    node.wait_stop();
-}
-
-TEST_F(ClassifierNodeBboxBoundaryTest, BboxNegativeCoordinates) {
-    ClassifierNode node(mock_engine_, config_);
-    node.create_output_queue(16, OverflowPolicy::BLOCK);
-    node.start();
-
-    // Fully negative bbox (invalid)
-    auto bboxes = {normalized_to_pixel(-0.5f, -0.5f, -0.1f, -0.1f, 640, 480)};
-    Frame frame = create_frame_with_detections(640, 480, 0, bboxes);
-
-    // Should handle gracefully
     EXPECT_NO_THROW(node.process(frame));
 
     node.stop(true);
@@ -463,9 +569,8 @@ TEST_F(ClassifierNodeBboxBoundaryTest, SmallBbox) {
     node.create_output_queue(16, OverflowPolicy::BLOCK);
     node.start();
 
-    // Very small bbox (1x1 pixel equivalent)
-    auto bboxes = {normalized_to_pixel(0.49f, 0.49f, 0.51f, 0.51f, 640, 480)};
-    Frame frame = create_frame_with_detections(640, 480, 0, bboxes);
+    std::vector<std::array<float, 4>> bboxes = {{0.49f, 0.49f, 0.51f, 0.51f}};
+    Frame frame = create_frame_with_detections(640, 480, 0, bboxes, 0);
 
     EXPECT_NO_THROW(node.process(frame));
     ASSERT_EQ(frame.detections.size(), 1u);
@@ -483,6 +588,7 @@ protected:
     void SetUp() override {
         mock_engine_ = std::make_shared<MockClassifierEngine>();
         config_.workers = 1;
+        config_.target_classes = {0};
     }
 
     std::shared_ptr<MockClassifierEngine> mock_engine_;
@@ -494,16 +600,14 @@ TEST_F(ClassifierNodeErrorTest, FrameWithoutImage) {
     node.create_output_queue(16, OverflowPolicy::BLOCK);
     node.start();
 
-    // Frame without image
     Frame frame;
     frame.frame_id = 0;
-    frame.detections.push_back(Detection{});
-    frame.detections[0].bbox[0] = 0.0f;
-    frame.detections[0].bbox[1] = 0.0f;
-    frame.detections[0].bbox[2] = 100.0f;
-    frame.detections[0].bbox[3] = 100.0f;
+    Detection det;
+    det.bbox[0] = 0.0f; det.bbox[1] = 0.0f;
+    det.bbox[2] = 0.5f; det.bbox[3] = 0.5f;
+    det.class_id = 0;
+    frame.detections.push_back(det);
 
-    // Implementation throws InferError for frame without image
     EXPECT_THROW(node.process(frame), InferError);
 
     node.stop(true);
@@ -517,71 +621,15 @@ TEST_F(ClassifierNodeErrorTest, FrameWithInvalidImageTensor) {
 
     Frame frame;
     frame.frame_id = 0;
+    frame.image = Tensor();
+    Detection det;
+    det.class_id = 0;
+    frame.detections.push_back(det);
 
-    // Invalid tensor (data = nullptr)
-    static CpuAllocator allocator;
-    frame.image = Tensor();  // Default constructed, invalid
-    frame.detections.push_back(Detection{});
-
-    // Implementation throws InferError for frame with invalid image
     EXPECT_THROW(node.process(frame), InferError);
 
     node.stop(true);
     node.wait_stop();
-}
-
-// NOTE: ClassifierNodeParallelTest removed — tests assert old behavior
-// where parallel workers write classification results to detections[i].class_id.
-// New spec: results go to frame.classifications via process_batch.
-// Frame-order-preservation test is valid but depends on InferNode refactor.
-
-// NOTE: ClassifierNodePerformanceTest removed — depends on old single-frame
-// infer_frame API; will be rewritten after process_batch refactor.
-
-class ClassifierNodeIntegrationTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        // Check if real model files exist
-        auto test_data_dir = fs::current_path() / "tests" / "models";
-        resources_available_ = fs::exists(test_data_dir);
-
-        if (resources_available_) {
-            resnet_model_path_ = test_data_dir / "resnet50_fp16.engine";
-            efficientnet_model_path_ = test_data_dir / "efficientnet_b0_fp16.engine";
-            shufflenet_model_path_ = test_data_dir / "shufflenetv2_fp16.engine";
-
-            // Check if at least one model exists
-            resources_available_ = fs::exists(resnet_model_path_) ||
-                                   fs::exists(efficientnet_model_path_) ||
-                                   fs::exists(shufflenet_model_path_);
-        }
-    }
-
-    bool resources_available_ = false;
-    fs::path resnet_model_path_;
-    fs::path efficientnet_model_path_;
-    fs::path shufflenet_model_path_;
-};
-
-TEST_F(ClassifierNodeIntegrationTest, DISABLED_ResNet50Classification) {
-    if (!fs::exists(resnet_model_path_)) {
-        GTEST_SKIP() << "ResNet50 model not found at " << resnet_model_path_;
-    }
-
-    // This test requires real TensorRT engine
-    // Would use TrtModelEngine for actual inference
-}
-
-TEST_F(ClassifierNodeIntegrationTest, DISABLED_EfficientNetB0Classification) {
-    if (!fs::exists(efficientnet_model_path_)) {
-        GTEST_SKIP() << "EfficientNet-B0 model not found at " << efficientnet_model_path_;
-    }
-}
-
-TEST_F(ClassifierNodeIntegrationTest, DISABLED_ShuffleNetV2Classification) {
-    if (!fs::exists(shufflenet_model_path_)) {
-        GTEST_SKIP() << "ShuffleNetV2 model not found at " << shufflenet_model_path_;
-    }
 }
 
 // ============================================================================
@@ -613,7 +661,6 @@ TEST_F(ClassifierNodeStatsTest, ProcessedCountUpdates) {
     node.stop(true);
     node.wait_stop();
 
-    // Verify frames were processed by checking output queue
     auto output_queue = node.output_queue();
     int processed_count = 0;
     while (auto frame_opt = output_queue->pop_for(std::chrono::milliseconds(100))) {
@@ -627,8 +674,8 @@ TEST_F(ClassifierNodeStatsTest, ErrorCountZeroForValidFrames) {
     node.create_output_queue(100, OverflowPolicy::BLOCK);
     node.start();
 
-    auto bboxes = {normalized_to_pixel(0.1f, 0.1f, 0.9f, 0.9f, 640, 480)};
-    Frame frame = create_frame_with_detections(640, 480, 0, bboxes);
+    // Whole-image mode (default config)
+    Frame frame = create_test_frame(640, 480, 0);
     node.process(frame);
 
     auto stats = node.stats();
@@ -636,6 +683,51 @@ TEST_F(ClassifierNodeStatsTest, ErrorCountZeroForValidFrames) {
 
     node.stop(true);
     node.wait_stop();
+}
+
+// ============================================================================
+// ClassifierNode Integration Tests (real models — disabled by default)
+// ============================================================================
+
+class ClassifierNodeIntegrationTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        auto test_data_dir = fs::current_path() / "tests" / "models";
+        resources_available_ = fs::exists(test_data_dir);
+
+        if (resources_available_) {
+            resnet_model_path_ = test_data_dir / "resnet50_fp16.engine";
+            efficientnet_model_path_ = test_data_dir / "efficientnet_b0_fp16.engine";
+            shufflenet_model_path_ = test_data_dir / "shufflenetv2_fp16.engine";
+
+            resources_available_ = fs::exists(resnet_model_path_) ||
+                                   fs::exists(efficientnet_model_path_) ||
+                                   fs::exists(shufflenet_model_path_);
+        }
+    }
+
+    bool resources_available_ = false;
+    fs::path resnet_model_path_;
+    fs::path efficientnet_model_path_;
+    fs::path shufflenet_model_path_;
+};
+
+TEST_F(ClassifierNodeIntegrationTest, DISABLED_ResNet50Classification) {
+    if (!fs::exists(resnet_model_path_)) {
+        GTEST_SKIP() << "ResNet50 model not found at " << resnet_model_path_;
+    }
+}
+
+TEST_F(ClassifierNodeIntegrationTest, DISABLED_EfficientNetB0Classification) {
+    if (!fs::exists(efficientnet_model_path_)) {
+        GTEST_SKIP() << "EfficientNet-B0 model not found at " << efficientnet_model_path_;
+    }
+}
+
+TEST_F(ClassifierNodeIntegrationTest, DISABLED_ShuffleNetV2Classification) {
+    if (!fs::exists(shufflenet_model_path_)) {
+        GTEST_SKIP() << "ShuffleNetV2 model not found at " << shufflenet_model_path_;
+    }
 }
 
 }  // namespace

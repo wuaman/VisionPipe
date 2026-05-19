@@ -1712,7 +1712,7 @@ public:
 | T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 |
 | T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | — | P1 | 未来扩展 | T2.2a | 移至「未来扩展」章节，不纳入正式排期 |
 | T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2a | 需要：InferNode 改为 process_batch 接口 |
-| T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 | 需要：target_classes 双模式 + 结果写入 frame.classifications（非覆盖 detections） |
+| T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [x] | T2.1 |
 | T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 | 需要：Frame 新增 classifications 字段 + InferNode batch 接口 |
 | T3.1 | nanobind 绑定核心类 + DSL 重构 | P3 | P0 | [ ] | T2.3、T2.4 | 需要：>> 返回 Pipeline、合并语法、run(block)/stop() API |
 | T3.2 | CustomNode 子进程架构 | P3 | P0 | [ ] | T3.1 | 需要：ProcessProxyNode + CustomNode + FrameView + IPC + subprocess |

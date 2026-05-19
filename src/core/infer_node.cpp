@@ -47,6 +47,10 @@ void InferNode::start() {
         throw ConfigError("InferNode requires an input queue");
     }
 
+    if (owned_input_queue_) {
+        owned_input_queue_->reset();
+    }
+
     contexts_.clear();
     contexts_.reserve(workers_);
     for (size_t i = 0; i < workers_; ++i) {

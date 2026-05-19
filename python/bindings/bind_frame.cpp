@@ -139,7 +139,8 @@ void bind_frame(nb::module_& m) {
         .def_rw("input_height", &ClassifierConfig::input_height)
         .def_rw("max_batch_size", &ClassifierConfig::max_batch_size)
         .def_rw("workers", &ClassifierConfig::workers)
-        .def_rw("normalize_mean_std", &ClassifierConfig::normalize_mean_std);
+        .def_rw("normalize_mean_std", &ClassifierConfig::normalize_mean_std)
+        .def_rw("target_classes", &ClassifierConfig::target_classes);
 
     nb::class_<SegmentConfig>(m, "SegmentConfig")
         .def(nb::init<>())
