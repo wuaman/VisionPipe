@@ -43,7 +43,8 @@ Next phase: (all phases confirmed)
 - InferNode batch 机制：**不匹配** — 当前为单帧 infer_frame 接口，无 process_batch
 - Frame.classifications：已修复 ✓ — 新增 Classification 结构体 + classifications 向量（frame.h:40-44, 53）
 - ClassifierNode 双模式：已修复 ✓ — target_classes 非空=二级分类，空=整图分类；结果写入 frame.classifications
-- T2.2a/T2.3/T2.4/T2.5 已标记为未完成
+- T2.2a 视频源节点：已修复 ✓ — FileSource GPU 解码填充 Frame::image（BGRA→RGB + CudaAllocator）；RtspSource CPU 解码填充 Frame::image；GPU 模式不支持时抛 CudaError
+- T2.3/T2.5 已标记为未完成
 
 ### Phase 3: Python 绑定 + DSL（已确认）
 - **3-A 绑定粒度** → 绑定所有核心类 + PipelineBuilder/PipelineConfig/AnnotatorNode/MockModelEngine 等额外类

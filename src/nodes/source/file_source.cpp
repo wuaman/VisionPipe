@@ -11,6 +11,8 @@
 
 #ifdef VISIONPIPE_USE_CUDA
 #include <cuda_runtime.h>
+#include <opencv2/cudaimgproc.hpp>
+#include "hal/nvidia/cuda_allocator.h"
 #endif
 
 namespace visionpipe {
@@ -155,10 +157,18 @@ bool FileSource::try_init_gpu_decoder() {
 
     gpu_reader_ = cv::cudacodec::createVideoReader(config_.uri);
 
-    fps_ = 25.0;
+    // Get FPS from VideoCapture metadata since cudacodec doesn't expose it
+    cv::VideoCapture probe(config_.uri);
+    if (probe.isOpened()) {
+      fps_ = probe.get(cv::CAP_PROP_FPS);
+      frame_count_ = static_cast<int64_t>(probe.get(cv::CAP_PROP_FRAME_COUNT));
+    }
+    if (fps_ <= 0) {
+      fps_ = 25.0;
+    }
 
-    VP_LOG_INFO("FileSource '{}' GPU decoder initialized: {}x{}", name_, width_,
-                height_);
+    VP_LOG_INFO("FileSource '{}' GPU decoder initialized: {}x{}, fps={}", name_,
+                width_, height_, fps_);
     return true;
 
   } catch (const cv::Exception &e) {
@@ -208,6 +218,34 @@ bool FileSource::read_frame_gpu(Frame &frame) {
 
     frame.pts_us =
         current_frame_ * static_cast<int64_t>(1e6 / (fps_ > 0 ? fps_ : 25.0));
+
+    // cudacodec outputs BGRA; convert to BGR then to RGB
+    cv::cuda::GpuMat gpu_bgr;
+    if (gpu_frame.channels() == 4) {
+      cv::cuda::cvtColor(gpu_frame, gpu_bgr, cv::COLOR_BGRA2RGB);
+    } else if (gpu_frame.channels() == 3) {
+      cv::cuda::cvtColor(gpu_frame, gpu_bgr, cv::COLOR_BGR2RGB);
+    } else {
+      gpu_bgr = gpu_frame;
+    }
+
+    const int h = gpu_bgr.rows;
+    const int w = gpu_bgr.cols;
+    const int c = gpu_bgr.channels();
+
+    static CudaAllocator cuda_alloc;
+    frame.image = Tensor({static_cast<int64_t>(h),
+                          static_cast<int64_t>(w),
+                          static_cast<int64_t>(c)},
+                         DataType::UINT8, &cuda_alloc);
+
+    if (gpu_bgr.isContinuous()) {
+      cudaMemcpy(frame.image.data, gpu_bgr.data, frame.image.nbytes,
+                 cudaMemcpyDeviceToDevice);
+    } else {
+      cudaMemcpy2D(frame.image.data, w * c, gpu_bgr.data, gpu_bgr.step,
+                   w * c, h, cudaMemcpyDeviceToDevice);
+    }
 
     return true;
   } catch (const cv::Exception &e) {

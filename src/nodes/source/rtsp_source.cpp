@@ -1,9 +1,17 @@
 #include "nodes/source/rtsp_source.h"
 
+#include <cstring>
+
+#include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
 
 #include "core/error.h"
 #include "core/logger.h"
+#include "core/tensor.h"
+
+#ifdef VISIONPIPE_USE_CUDA
+#include <cuda_runtime.h>
+#endif
 
 namespace visionpipe {
 
@@ -52,10 +60,16 @@ void RtspSource::on_open() {
   }
 
   if (config_.decode_mode == DecodeMode::GPU) {
-    VP_LOG_WARN(
-        "RtspSource '{}' GPU decode mode requested but falling back to CPU "
-        "(RTSP GPU decode not fully supported yet)",
-        name_);
+#ifdef VISIONPIPE_USE_CUDA
+    int device_count = 0;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
+    if (err != cudaSuccess || device_count == 0) {
+      throw CudaError("GPU decode requested but no CUDA device available");
+    }
+#endif
+    throw CudaError(
+        "GPU decode requested but RTSP GPU decode not supported yet: " +
+        config_.uri);
   }
 
   capture_ = std::make_unique<cv::VideoCapture>();
@@ -94,6 +108,17 @@ bool RtspSource::read_next(Frame &frame) {
   frame.pts_us =
       static_cast<int64_t>(capture_->get(cv::CAP_PROP_POS_MSEC) * 1000);
   ++current_frame_;
+
+  cv::Mat rgb;
+  cv::cvtColor(cpu_frame, rgb, cv::COLOR_BGR2RGB);
+
+  static CpuAllocator cpu_alloc;
+  const int h = rgb.rows, w = rgb.cols, c = rgb.channels();
+  frame.image = Tensor({static_cast<int64_t>(h),
+                        static_cast<int64_t>(w),
+                        static_cast<int64_t>(c)},
+                       DataType::UINT8, &cpu_alloc);
+  std::memcpy(frame.image.data, rgb.data, frame.image.nbytes);
 
   return true;
 }
