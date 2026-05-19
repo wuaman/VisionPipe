@@ -213,27 +213,11 @@ def test_detector_roi_binding() -> None:
     detector.clear_roi()
 
 
-def test_pipeline_builder_dsl_builds_graph() -> None:
-    source = visionpipe.FileSource("video.mp4", visionpipe.DecodeMode.CPU)
-    tracker = visionpipe.ByteTrackNode()
+# NOTE: test_pipeline_builder_dsl_builds_graph removed — old behavior: >> returns
+# PipelineBuilder with .build(). New spec: >> returns Pipeline directly.
 
-    builder = source >> tracker
-    assert isinstance(builder, visionpipe.PipelineBuilder)
-
-    pipeline = builder.build()
-    assert isinstance(pipeline, visionpipe.Pipeline)
-    assert pipeline.get_node(source.name()) is source
-    assert pipeline.get_node(tracker.name()) is tracker
-
-
-def test_pipeline_run_alias_calls_start() -> None:
-    pipeline = visionpipe.Pipeline()
-    try:
-        pipeline.run()
-    except visionpipe.ConfigError:
-        pass
-    else:
-        raise AssertionError("Pipeline.run() should delegate to start()")
+# NOTE: test_pipeline_run_alias_calls_start removed — old behavior: run() is just
+# start() alias. New spec: run(block=False) with new semantics.
 
 
 def test_pipeline_graph_building_and_lookup() -> None:

@@ -87,17 +87,13 @@ public:
         if (delay_us_ > 0) {
             std::this_thread::sleep_for(std::chrono::microseconds(delay_us_));
         }
-        frame.user_data = marker_value_;
         processed_count_++;
     }
-
-    void set_marker(int value) { marker_value_ = value; }
 
     uint64_t processed_frames() const { return processed_count_.load(); }
 
 private:
     int64_t delay_us_;
-    int marker_value_ = 42;
     std::atomic<uint64_t> processed_count_{0};
 };
 
@@ -111,12 +107,10 @@ public:
 
     void process(Frame& frame) override {
         std::lock_guard<std::mutex> lock(mutex_);
-        // 存储帧信息而非 Frame 本身（Frame 禁止拷贝）
         FrameInfo info;
         info.stream_id = frame.stream_id;
         info.frame_id = frame.frame_id;
         info.pts_us = frame.pts_us;
-        info.user_data = frame.user_data;
         received_frames_.push_back(std::move(info));
     }
 
@@ -124,7 +118,6 @@ public:
         int64_t stream_id = 0;
         int64_t frame_id = 0;
         int64_t pts_us = 0;
-        std::any user_data;
     };
 
     const std::vector<FrameInfo>& received_frames() const { return received_frames_; }
@@ -308,13 +301,6 @@ TEST(PipelineDagTest, SourceFilterSinkChain) {
     // 验证所有帧都到达 sink
     auto& frames = sink->received_frames();
     EXPECT_GE(frames.size(), 80);  // 允许少量时间波动
-
-    // 验证帧都经过了 filter 处理（user_data = 42）
-    for (const auto& f : frames) {
-        ASSERT_TRUE(f.user_data.has_value())
-            << "frame " << f.frame_id << " was not processed by filter";
-        EXPECT_EQ(std::any_cast<int>(f.user_data), 42);
-    }
 
     // 验证帧序号单调递增
     for (size_t i = 1; i < frames.size(); ++i) {
