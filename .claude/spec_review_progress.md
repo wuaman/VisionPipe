@@ -1,8 +1,8 @@
 # Spec Review Progress
 
 ## Status
-Last reviewed: Phase 4
-Next phase: Phase 5
+Last reviewed: Phase 5
+Next phase: (all phases confirmed)
 
 ## Confirmed Phases
 
@@ -81,6 +81,19 @@ Next phase: Phase 5
 - Pipeline 生命周期分离 (create/start/stop/destroy)：匹配 ✓
 - T4.1/T4.2/T4.3/T4.4 全部标记为未完成（需 rework 以匹配规范）
 
+### Phase 5: 集成验证 + 收尾（已确认）
+- **Phase 5 重新定位** → 从"集成测试 + 性能调优"改为"集成验证 + 收尾"，聚焦功能正确性而非性能指标
+- **T5.1 多 Pipeline 并发** → 去掉 VRAM ≤10% 硬指标，改为功能性验证（互不干扰 + 模型共享生效 + 生命周期隔离）
+- **T5.2 端到端验证测试（新增）** → 三层递进验证：节点级正确性 → 数据流完整性（Frame 累积语义）→ 控制面验证（REST/WebSocket/YAML 往返）。完整链路：FileSource → DetectorNode → ClassifierNode → TrackerNode → CustomNode(subprocess) → AnnotatorNode → JsonResultSink
+- **旧 T5.2 性能 benchmark** → 完全移除，后续专项处理（Section 4.4 标注为参考指标）
+- **T2.2b ICodec HAL** → 从正式排期移除，移至 DEV_SPEC「未来扩展」章节
+
+#### 代码验证结果
+- T5.1（标记 [x]）：test_multi_pipeline.py 存在且结构正确，但测试资产路径不匹配（test.mp4 不存在、engine 路径错误），实际会全部 skip。**标记回 [ ]，需 rework**
+- benchmarks/ 目录不存在（旧 T5.2 已移除，无需创建）
+- examples/ 和 docs/ 目录不存在，但项目根目录有 demo_detect.py/demo_full_pipeline.py 等可作为 T5.3 基础素材
+- 开发环境：RTX 3060 12GB + WSL2（16GB 内存），跑 2-3 路 1080p pipeline 可行
+
 ## Cross-Phase Dependencies
 
 - Phase 1 合并拓扑 + Phase 0 Frame move-only：兼容（多生产者各自 move 到共享队列，零拷贝）
@@ -99,6 +112,10 @@ Next phase: Phase 5
 - Phase 4 单视角切换 ← Phase 1 不支持分叉（通过 Annotator enable/disable 而非 DAG 分叉）
 - Phase 4 REST create/start/stop/delete ← Phase 1 PipelineManager 生命周期（已分离）
 - Phase 4 JsonResultSink 独立 WS ← Phase 0 Frame detections/tracks 字段（序列化为 JSON）
+- Phase 5 T5.2 端到端验证 ← Phase 2 所有推理节点（DetectorNode/ClassifierNode/TrackerNode）
+- Phase 5 T5.2 端到端验证 ← Phase 3 CustomNode subprocess + YAML 往返
+- Phase 5 T5.2 端到端验证 ← Phase 4 REST API + WebSocket 控制通道
+- Phase 5 T5.1 多 Pipeline ← Phase 1 PipelineManager + Phase 2 ModelRegistry 共享
 
 ## Notes
 
@@ -107,3 +124,4 @@ Next phase: Phase 5
 - 2026-05-14: Phase 2 确认，发现 InferNode batch/ClassifierNode 双模式/Frame.classifications/FileSource 继承均需 rework，T2.2a/T2.3/T2.4/T2.5 标记为 [ ]
 - 2026-05-15: Phase 3 确认，新增 CustomNode 子进程架构（3-D）和 DSL 重构（3-C），T3.1/T3.2/T3.3 全部标记为 [ ]
 - 2026-05-15: Phase 4 确认，关键决策：分离生命周期、通用控制通道、JsonResult 独立 WS、MjpegSink 默认关闭、SinkNode 基类统一 enabled、NodeStats 补齐 latency_ms+state。T4.1/T4.2/T4.3/T4.4 标记为 [ ]
+- 2026-05-19: Phase 5 确认，重新定位为「集成验证 + 收尾」。移除性能 benchmark（后续专项），新增 T5.2 端到端验证测试（三层递进），T2.2b ICodec HAL 移至未来扩展，T5.1 标记回 [ ]（测试资产路径需修复）

@@ -219,7 +219,9 @@ tests/
 | 多 Pipeline 并发：物理+化学同时运行，结果互不污染 | 两路不同测试视频 + 断言类别集合不相交 |
 | 进程收到 `SIGTERM` 后所有 pipeline 优雅退出 | subprocess + 计时断言 <2s |
 
-### 4.4 性能基准测试（非 CI gate，定期运行）
+### 4.4 性能基准测试（参考指标，后续专项评测）
+
+> ⚠️ 以下指标为参考目标，不纳入阶段门禁。待功能全链路验证通过后，再做专项性能评测与调优。
 
 | 指标 | 目标值 | 测试方法 |
 |---|---|---|
@@ -715,7 +717,7 @@ public:
 | Phase 2 | NVIDIA 推理 + 编解码 | 第 6-9 周 |
 | Phase 3 | Python 绑定 + DSL | 第 10-12 周 |
 | Phase 4 | 管理 API + 前端交付 | 第 13-15 周 |
-| Phase 5 | 集成测试 + 性能调优 | 第 16-18 周 |
+| Phase 5 | 集成验证 + 收尾 | 第 16-18 周 |
 
 ---
 #### Phase 0：工程骨架 + CI 基础（第 1-2 周）
@@ -1479,37 +1481,208 @@ public:
   - 集成测试
 
 ---
-#### Phase 5：集成测试 + 性能调优（第 16-18 周）
+#### Phase 5：集成验证 + 收尾（第 16-18 周）
 
-目的：达成性能基准目标，完成端到端测试，ICodec HAL 跨平台编解码抽象（T2.2b），文档和 demo 收尾。
+目的：确保 Phase 0-4 每个环节功能正确、数据流完整、多 pipeline 互不干扰，文档和 demo 收尾。
 
 任务 5.1：多 Pipeline 并发集成测试
 
 - 修改文件列表
   - tests/e2e/test_multi_pipeline.py
+- 实现的类/函数
+  - 两路 pipeline 并发运行测试（不同测试视频 / 不同 class filter）
+  - ModelRegistry 共享验证（acquire 同一 engine 只加载一次）
+  - 生命周期隔离验证（一路 stop 不影响另一路）
 - 验收标准
-  - 物理实验 + 化学实验同时运行，各自结果类别集合不相交
-  - 共享同一 YOLOv8 backbone，VRAM 增量 ≤ 单 pipeline 的 10%
+  - 两路 pipeline 同时运行，各自结果类别集合不相交
+  - ModelRegistry 模型共享生效：两路 acquire 同一 engine，构造计数 = 1
+  - 一路 stop() 不影响另一路继续运行
+  - 全部 stop() 后资源正常释放（无 GPU 内存泄漏）
 - 测试方法
-  - pytest E2E，nvml 监控 VRAM
+  - pytest E2E，需 GPU
+- 测试代码骨架
+  ```python
+  # tests/e2e/test_multi_pipeline.py
+  @pytest.mark.gpu
+  def test_two_pipelines_disjoint_classes():
+      """两路 pipeline 并发运行，结果类别集合不相交"""
+      pipe_a = FileSource("video_a.mp4") >> DetectorNode(engine, class_filter=[0,1,2]) >> sink_a
+      pipe_b = FileSource("video_b.mp4") >> DetectorNode(engine, class_filter=[10,11,12]) >> sink_b
 
-任务 5.2：性能 benchmark + 调优
+      pipe_a.run(block=False)
+      pipe_b.run(block=False)
+      time.sleep(5)
+      pipe_a.stop()
+      pipe_b.stop()
+
+      classes_a = {d.class_id for f in sink_a.frames for d in f.detections}
+      classes_b = {d.class_id for f in sink_b.frames for d in f.detections}
+      assert classes_a.isdisjoint(classes_b)
+
+  @pytest.mark.gpu
+  def test_shared_model_single_load():
+      """共享同一 engine，ModelRegistry 只加载一次"""
+      registry = ModelRegistry.instance()
+      engine1 = registry.acquire("yolov8n.engine")
+      engine2 = registry.acquire("yolov8n.engine")
+      assert engine1 is engine2  # 同一实例
+
+  @pytest.mark.gpu
+  def test_independent_lifecycle():
+      """一路停止不影响另一路"""
+      pipe_a.run(block=False)
+      pipe_b.run(block=False)
+      pipe_a.stop()
+      assert pipe_b.status == PipelineStatus.RUNNING
+      pipe_b.stop()
+  ```
+
+任务 5.2：端到端验证测试
 
 - 修改文件列表
-  - benchmarks/benchmark_throughput.py
-  - benchmarks/benchmark_latency.py
-- 验收标准（RTX 3090）
-
-| 指标                        | 目标            |
-|-----------------------------|-----------------|
-| 单路 1080p YOLOv8           | ≥25 FPS         |
-| 16路 1080p 同卡             | ≥200 FPS 总吞吐 |
-| Pipeline 启动（模型已缓存） | <500ms          |
-| 优雅停止                    | <500ms          |
-| ROI 热更生效                | ≤1 帧           |
-
+  - tests/e2e/test_e2e_validation.py
+- 实现的类/函数
+  - 第一层：节点级正确性验证（每个节点输出符合预期）
+  - 第二层：数据流完整性验证（Frame 累积语义正确）
+  - 第三层：控制面验证（REST API / WebSocket / YAML 往返）
+- 验收标准
+  - **第一层 — 节点级正确性**：
+    - FileSource：100 帧视频 → 输出恰好 100 帧，frame_id 单调递增，image 非空
+    - DetectorNode：有目标测试图 → detections 非空，bbox ∈ [0,1]，confidence > 阈值
+    - ClassifierNode 二级分类：detections 非空时 classifications 非空，detection_index 合法
+    - ClassifierNode 整图分类：detection_index = -1，不依赖 detections
+    - TrackerNode：连续帧相同目标 → track_id 保持一致（至少 N 帧内不变）
+    - CustomNode（subprocess 模式）：user_data["test_key"] 在下游可读
+    - AnnotatorNode：输出 image 尺寸与输入一致
+    - JsonResultSink：输出 JSON 可解析，包含 detections/tracks 字段
+  - **第二层 — 数据流完整性**：
+    - 完整链路 `FileSource → DetectorNode → ClassifierNode → TrackerNode → CustomNode → AnnotatorNode → JsonResultSink` 跑通 100 帧无 crash
+    - 链路末端 Frame 同时具备：stream_id/frame_id/pts_us（Source）、detections 非空且 bbox 合法（Detector）、classifications 非空且 detection_index 有效（Classifier）、tracks 非空且 track_id > 0（Tracker）、user_data["test_key"] 存在（CustomNode）
+  - **第三层 — 控制面验证**：
+    - REST API：create → start → GET health（FPS > 0）→ GET nodes（每个节点 state=RUNNING）→ stop → delete 全流程 200 OK
+    - WebSocket 控制通道：发送 set_param → 验证节点参数生效
+    - YAML 往返：DSL 构建 pipeline → export_yaml → load_yaml → 再次运行，Sink 输出结构一致
 - 测试方法
-  - 独立 benchmark 脚本，输出 JSON 报告
+  - pytest E2E，需 GPU
+- 测试代码骨架
+  ```python
+  # tests/e2e/test_e2e_validation.py
+
+  # ── 第一层：节点级正确性 ──
+
+  @pytest.mark.gpu
+  def test_filesource_frame_count():
+      """FileSource 输出帧数与视频帧数一致"""
+      src = FileSource("sample_100frames.mp4", decode_mode="auto")
+      sink = CollectorSink()
+      pipe = src >> sink
+      pipe.run(block=True)
+      assert len(sink.frames) == 100
+      for i, f in enumerate(sink.frames):
+          assert f.frame_id == i
+          assert f.image is not None
+
+  @pytest.mark.gpu
+  def test_detector_produces_valid_detections():
+      """DetectorNode 输出 bbox 在 [0,1] 范围内"""
+      src = FileSource("sample_with_objects.mp4")
+      det = DetectorNode(engine_path="yolov8n.engine")
+      sink = CollectorSink()
+      pipe = src >> det >> sink
+      pipe.run(block=True)
+      frames_with_dets = [f for f in sink.frames if len(f.detections) > 0]
+      assert len(frames_with_dets) > 0  # 至少有目标被检测到
+      for f in frames_with_dets:
+          for d in f.detections:
+              assert 0 <= d.bbox[0] <= 1 and 0 <= d.bbox[2] <= 1  # x 范围
+              assert 0 <= d.bbox[1] <= 1 and 0 <= d.bbox[3] <= 1  # y 范围
+              assert d.confidence > 0
+
+  @pytest.mark.gpu
+  def test_tracker_consistent_ids():
+      """连续帧中同一目标的 track_id 保持一致"""
+      pipe = src >> det >> tracker >> sink
+      pipe.run(block=True)
+      # 提取前 N 帧的 track_id 集合，验证存在至少一个跨帧一致的 id
+      all_track_ids = [set(t.track_id for t in f.tracks) for f in sink.frames if f.tracks]
+      assert len(all_track_ids) >= 2
+      persistent_ids = all_track_ids[0]
+      for ids in all_track_ids[1:5]:
+          persistent_ids &= ids
+      assert len(persistent_ids) > 0  # 至少一个目标持续被追踪
+
+  # ── 第二层：数据流完整性 ──
+
+  @pytest.mark.gpu
+  def test_full_chain_data_integrity():
+      """完整链路：每个节点的输出在 Frame 中累积"""
+      src = FileSource("sample_with_objects.mp4")
+      det = DetectorNode(engine_path="yolov8n.engine")
+      cls = ClassifierNode(engine_path="resnet50.engine", target_classes=[0, 1])
+      trk = TrackerNode()
+      custom = TestCustomNode()  # subprocess, 写入 user_data["smoke"]
+      ann = AnnotatorNode()
+      sink = CollectorSink()
+
+      pipe = src >> det >> cls >> trk >> custom >> ann >> sink
+      pipe.run(block=True)
+
+      for frame in sink.frames:
+          # Source 写入
+          assert frame.frame_id >= 0
+          assert frame.image is not None
+          # Detector 写入
+          if len(frame.detections) > 0:
+              assert all(d.bbox[2] > d.bbox[0] for d in frame.detections)
+          # Classifier 写入（有 detections 时）
+          if len(frame.detections) > 0:
+              assert len(frame.classifications) > 0
+              for c in frame.classifications:
+                  assert 0 <= c.detection_index < len(frame.detections)
+          # Tracker 写入
+          if len(frame.detections) > 0:
+              assert len(frame.tracks) > 0
+              assert all(t.track_id > 0 for t in frame.tracks)
+          # CustomNode 写入
+          assert "smoke" in frame.user_data
+
+  # ── 第三层：控制面验证 ──
+
+  @pytest.mark.gpu
+  async def test_rest_api_full_lifecycle():
+      """REST API 全生命周期"""
+      async with httpx.AsyncClient(base_url="http://localhost:8080") as client:
+          # create
+          resp = await client.post("/pipelines", json=pipeline_spec)
+          assert resp.status_code == 200
+          pid = resp.json()["id"]
+          # start
+          resp = await client.post(f"/pipelines/{pid}/start")
+          assert resp.status_code == 200
+          # health
+          resp = await client.get(f"/pipelines/{pid}/health")
+          assert resp.json()["fps"] > 0
+          # nodes
+          resp = await client.get(f"/pipelines/{pid}/nodes")
+          for node in resp.json()["nodes"]:
+              assert node["state"] == "RUNNING"
+          # stop
+          resp = await client.post(f"/pipelines/{pid}/stop")
+          assert resp.status_code == 200
+          # delete
+          resp = await client.delete(f"/pipelines/{pid}")
+          assert resp.status_code == 200
+
+  @pytest.mark.gpu
+  def test_yaml_roundtrip():
+      """YAML 往返一致性"""
+      pipe = src >> det >> tracker >> sink
+      pipe.export_yaml("/tmp/test_pipe.yaml")
+      pipe2 = Pipeline.load_yaml("/tmp/test_pipe.yaml")
+      pipe2.run(block=True)
+      # 验证节点结构一致
+      assert [n.name for n in pipe.nodes] == [n.name for n in pipe2.nodes]
+  ```
 
 任务 5.3：文档与 Demo
 
@@ -1521,6 +1694,7 @@ public:
 - 验收标准
   - 新用户按 README 操作，10 分钟内跑通 quickstart.py
   - multi_pipeline_demo.py 演示两个场景并发运行
+  - 基于 RTX 3060 12GB + WSL2 环境验证可运行
 
 ---
 ### 6.2 项目跟踪表
@@ -1536,7 +1710,7 @@ public:
 | T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
 | T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [x] | T1.3 |
 | T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 | 需要：继承 SourceNode（非 NodeBase）+ SourceConfig 补充 Phase 1 字段 |
-| T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | P5 | P1 | [ ] | T2.2a、T5.1 |
+| T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | — | P1 | 未来扩展 | T2.2a | 移至「未来扩展」章节，不纳入正式排期 |
 | T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2a | 需要：InferNode 改为 process_batch 接口 |
 | T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 | 需要：target_classes 双模式 + 结果写入 frame.classifications（非覆盖 detections） |
 | T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 | 需要：Frame 新增 classifications 字段 + InferNode batch 接口 |
@@ -1547,9 +1721,31 @@ public:
 | T4.2 | WebRTC Sink | P4 | P0 | [ ] | T3.1 | 需要：继承 SinkNode（非 NodeBase） |
 | T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [ ] | T4.1、T4.2 | 需要：通用 set_param 消息转发（不仅 ROI） |
 | T4.4 | JsonResultSink + MjpegSink | P4 | P0 | [ ] | T3.1 | 需要：SinkNode 基类 + enabled 属性 + MjpegSink 默认关闭 + JsonResult 独立 WS |
-| T5.1 | 多 Pipeline 并发集成测试 | P5 | P0 | [x] | T4.1 |
-| T5.2 | 性能 benchmark + 调优 | P5 | P0 | [ ] | T5.1 |
-| T5.3 | 文档与 Demo | P5 | P1 | [ ] | T5.2 |
+| T5.1 | 多 Pipeline 并发集成测试 | P5 | P0 | [ ] | T4.1 | 需 rework：修复测试资产路径 + 去掉 VRAM ≤10% 硬指标 |
+| T5.2 | 端到端验证测试（三层验证） | P5 | P0 | [ ] | T4.1、T4.3、T4.4 |
+| T5.3 | 文档与 Demo | P5 | P1 | [ ] | T5.1、T5.2 |
+
+---
+
+## 6.3 未来扩展（不纳入当前排期）
+
+#### ICodec HAL 抽象 + 跨平台编解码（原 T2.2b）
+
+一期 SourceNode 直接调用 `cv::cudacodec`（GPU）/ `cv::VideoCapture`（CPU），满足 NVIDIA 平台需求。后续如需支持异构硬件（华为昇腾 DVPP、瑞芯微 MPP），引入 ICodec HAL 抽象层：
+
+- `class ICodec`：纯虚接口（open / decode_next / close / device_type）
+- `class NvDecCodec : public ICodec`（可升级为 FFmpeg CUVID 或直接 NVCUVID API）
+- `class OpenCvCodec : public ICodec`（封装当前 cv::cudacodec + VideoCapture fallback）
+- 预留：`DvppCodec`（昇腾）、`MppCodec`（瑞芯微）
+- Source 节点通过 ICodec 工厂按平台选择后端，上层 API 不变
+
+#### 性能 benchmark + 专项调优
+
+待功能全链路验证通过后，独立做性能评测（参见 Section 4.4 参考指标），包括：
+- 吞吐量 benchmark（单路 / 多路）
+- 延迟 profiling（节点级 latency 分析）
+- 显存优化（模型共享效率、Tensor 内存池）
+- 多 pipeline 并发调度优化
 
 ---
 
