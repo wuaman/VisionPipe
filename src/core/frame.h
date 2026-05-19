@@ -3,6 +3,8 @@
 #include <any>
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 #include "core/tensor.h"
 
@@ -34,6 +36,13 @@ struct Track {
     float confidence = 0.0f;  ///< 置信度
 };
 
+/// @brief 分类结果
+struct Classification {
+    int detection_index = -1;  ///< 关联的 detection 索引，-1 表示整图分类
+    int class_id = 0;          ///< 类别 ID
+    float confidence = 0.0f;   ///< 置信度
+};
+
 /// @brief 帧数据结构
 struct Frame {
     int64_t stream_id = 0;           ///< 流标识符，同一 pipeline 内唯一
@@ -41,9 +50,10 @@ struct Frame {
     int64_t pts_us = 0;              ///< 时间戳（微秒）
     Tensor image;                    ///< GPU/CPU tensor
     std::vector<Detection> detections;  ///< 检测结果
+    std::vector<Classification> classifications;  ///< 分类结果
     std::vector<Track> tracks;          ///< 追踪结果
     std::vector<std::vector<uint8_t>> masks;  ///< 分割掩码，每个 detection 对应一个，orig_h×orig_w 行优先 0/1
-    std::any user_data;                 ///< 用户附加数据
+    std::unordered_map<std::string, std::any> user_data;  ///< 用户附加数据，按 key 隔离
 
     /// @brief 默认构造函数
     Frame() = default;
@@ -66,9 +76,10 @@ struct Frame {
         pts_us = 0;
         image = Tensor();
         detections.clear();
+        classifications.clear();
         tracks.clear();
         masks.clear();
-        user_data.reset();
+        user_data.clear();
     }
 
     /// @brief 是否有图像数据

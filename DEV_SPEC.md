@@ -1702,7 +1702,7 @@ public:
 | ID | 任务 | 阶段 | 优先级 | 状态 | 依赖 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | T0.1 | 目录结构与 CMake 配置 | P0 | P0 | [x] | — |
-| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [ ] | T0.1 | Frame.user_data 需从 std::any 改为 map<string, any> |
+| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [x] | T0.1 |
 | T0.3 | 日志系统初始化 | P0 | P0 | [x] | T0.1 |
 | T1.1 | 节点基类与 DAG | P1 | P0 | [ ] | T0.2 | 需要：SourceNode 中间抽象类 + 合并拓扑支持 + SourceConfig 扩展 |
 | T1.2 | PipelineManager + 生命周期 | P1 | P0 | [x] | T1.1 |

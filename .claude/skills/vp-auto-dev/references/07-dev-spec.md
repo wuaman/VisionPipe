@@ -11,6 +11,7 @@
 | GPU/CUDA 错误 | 抛出 `CudaError`，携带错误码 | `cudaMalloc` 失败 |
 | 模型加载错误 | 抛出 `ModelLoadError` | engine 文件损坏 |
 | 推理错误 | 抛出 `InferError` | 输入 shape 不匹配 |
+| 视频流错误 | 抛出 `StreamError`，携带 URI | 拉流失败超过重试次数 |
 
 **异常基类层次**：
 
@@ -25,6 +26,7 @@ class NotFoundError : public VisionPipeError { /* ... */ };
 class CudaError : public VisionPipeError { /* ... */ };
 class ModelLoadError : public VisionPipeError { /* ... */ };
 class InferError : public VisionPipeError { /* ... */ };
+class StreamError : public VisionPipeError { /* ... */ };
 ```
 
 #### Python ↔ C++ 异常穿透
@@ -38,6 +40,7 @@ NotFoundError                 →  visionpipe.NotFoundError
 CudaError                     →  visionpipe.CudaError
 ModelLoadError                →  visionpipe.ModelLoadError
 InferError                    →  visionpipe.InferError
+StreamError                   →  visionpipe.StreamError
 std::exception                →  RuntimeError
 未知异常                       →  RuntimeError (wrapped)
 ```

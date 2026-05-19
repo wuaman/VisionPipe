@@ -14,7 +14,7 @@ Next phase: (all phases confirmed)
 #### 代码验证结果
 - IAllocator 位置：匹配（tensor.h:28-44）
 - Tensor RAII：匹配（析构释放 tensor.h:114-119，拷贝删除 122-123，move 实现 126-155）
-- Frame.user_data：**不匹配** — 代码仍为 `std::any`（frame.h:46），需改为 `map<string, any>`。T0.2 已标记为未完成。
+- Frame.user_data：已修复 ✓ — 改为 `unordered_map<string, any>`（frame.h:56）
 
 ### Phase 1: C++ 核心调度框架（已确认）
 - **1-A SourceNode 架构** → 保留继承 NodeBase，引入 SourceNode 中间抽象类。SourceConfig 增加 loop/skip_frames/max_retries/retry_interval_ms。图片=单帧源。StreamError 新异常类型。
@@ -41,7 +41,7 @@ Next phase: (all phases confirmed)
 - T2.1 HAL NVIDIA：匹配 ✓
 - T2.2a FileSource 继承：**不匹配** — 继承 NodeBase 而非 SourceNode；SourceConfig 缺少 Phase 1 字段
 - InferNode batch 机制：**不匹配** — 当前为单帧 infer_frame 接口，无 process_batch
-- Frame.classifications：**不匹配** — 代码中无此字段
+- Frame.classifications：已修复 ✓ — 新增 Classification 结构体 + classifications 向量（frame.h:40-44, 53）
 - ClassifierNode 双模式：**不匹配** — 无 target_classes，结果覆盖 detections
 - T2.2a/T2.3/T2.4/T2.5 已标记为未完成
 

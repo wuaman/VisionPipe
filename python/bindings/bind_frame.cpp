@@ -165,12 +165,19 @@ void bind_frame(nb::module_& m) {
         .def_rw("age", &Track::age)
         .def_rw("confidence", &Track::confidence);
 
+    nb::class_<Classification>(m, "Classification")
+        .def(nb::init<>())
+        .def_rw("detection_index", &Classification::detection_index)
+        .def_rw("class_id", &Classification::class_id)
+        .def_rw("confidence", &Classification::confidence);
+
     nb::class_<Frame>(m, "Frame", nb::dynamic_attr())
         .def(nb::init<>())
         .def_rw("stream_id", &Frame::stream_id)
         .def_rw("frame_id", &Frame::frame_id)
         .def_rw("pts_us", &Frame::pts_us)
         .def_rw("detections", &Frame::detections)
+        .def_rw("classifications", &Frame::classifications)
         .def_rw("tracks", &Frame::tracks)
         .def("clear", &Frame::clear)
         .def("has_image", &Frame::has_image)

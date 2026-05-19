@@ -53,6 +53,7 @@ DetectorConfig = _ext.DetectorConfig
 ClassifierConfig = _ext.ClassifierConfig
 SegmentConfig = _ext.SegmentConfig
 Detection = _ext.Detection
+Classification = _ext.Classification
 Track = _ext.Track
 Frame = _ext.Frame
 
@@ -128,6 +129,7 @@ __all__ = [
     "ClassifierConfig",
     "SegmentConfig",
     "Detection",
+    "Classification",
     "Track",
     "Frame",
     "IModelEngine",

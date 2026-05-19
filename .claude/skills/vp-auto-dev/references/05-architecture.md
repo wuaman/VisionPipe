@@ -83,20 +83,55 @@ C++ 对象到 Python 的桥梁。将 Pipeline、Frame、Detection、各 Node 类
 #### 5.2.1 节点基类体系
 
 ```
-BaseNode (C++)
-├── SourceNode          # 视频源：RTSP/文件/摄像头
-├── InferNode           # 通用推理节点（持有 IExecContext × N workers）
-│   ├── DetectorNode    # 目标检测（内置 bbox 后处理）
-│   ├── ClassifierNode  # 图像分类（帧内 batch crop）
-│   ├── SegmentNode     # 实例分割
-│   └── TrackerNode     # 追踪（ByteTrack，纯 CPU）
-├── SinkNode            # 输出节点
-│   ├── WebRTCSink      # WebRTC 实时预览（核心）
-│   ├── JsonResultSink  # 结构化结果推送 WebSocket/HTTP
-│   ├── MjpegSink       # MJPEG dev/debug
-│   └── RtspSink        # (预留接口，二期)
-└── PyNode (nanobind)   # Python 自定义业务节点基类
+NodeBase (C++)                    # 提供: name, state, queues, stats, set_param, 生命周期管理
+├── SourceNode (抽象中间类)        # 主动产生帧，重写 worker_loop，持有 SourceConfig
+│   ├── FileSource               # 视频文件 / 图片文件
+│   └── StreamSource             # RTSP / 摄像头
+├── ProcessNode (抽象中间类)       # 被动消费帧，从 input_queue 取帧 → process() → output_queue
+│   ├── InferNode                # 通用推理节点（持有 IExecContext × N workers）
+│   │   ├── DetectorNode         # 目标检测（内置 bbox 后处理）
+│   │   ├── ClassifierNode       # 图像分类（帧内 batch crop）
+│   │   ├── SegmentNode          # 实例分割
+│   │   └── TrackerNode          # 追踪（ByteTrack，纯 CPU）
+│   └── VisualizeNode            # 可视化绘制（bbox/label/track_id 叠加到 image）
+├── SinkNode (抽象中间类)          # 只读消费帧，不修改 Frame
+│   ├── WebRTCSink               # WebRTC 实时预览（核心）
+│   ├── JsonResultSink           # 结构化结果推送 WebSocket/HTTP
+│   ├── MjpegSink               # MJPEG dev/debug
+│   └── RtspSink                # (预留接口，二期)
+└── PyNode (nanobind)            # Python 自定义业务节点基类
 ```
+
+**节点驱动模式差异**：
+- `SourceNode`：主动产生帧。重写 `source_worker_loop()`，不走 `process()` 接口。循环解码 → push 到 output_queue。
+- `ProcessNode`：被动消费帧。基类 `worker_loop()` 从 input_queue pop → 调用子类 `process(Frame&)` → push 到 output_queue。
+- `SinkNode`：被动消费帧，只读不写。基类统一提供 `enabled` 属性（默认 true），可通过 `set_param("enabled", false)` 运行时关闭/开启。MjpegSink 默认 `enabled=false`。
+
+**NodeStats 结构**：
+
+```cpp
+enum class NodeState { INIT, RUNNING, STOPPED, ERROR };
+
+struct NodeStats {
+    double   fps;               // 最近 N 秒的平均处理 FPS
+    double   latency_ms;        // 平均处理延迟（ms/frame）
+    uint64_t frames_processed;  // 累计处理帧数
+    uint64_t errors;            // 累计错误数
+    NodeState state;            // 节点运行状态
+};
+```
+
+通过 `NodeBase::stats()` 方法获取，`GET /pipelines/{id}/nodes` 接口返回所有节点的 NodeStats。
+
+**DAG 拓扑支持**：
+- **支持合并（多对一）**：多个 SourceNode 的 output_queue 指向同一个下游节点的 input_queue。BoundedQueue 支持多生产者并发 push，Frame 通过 move 入队，零拷贝。典型场景：多路视频流 → 同一个 DetectorNode。
+- **不支持分叉（一对多）**：Frame 是 move-only 的，无法同时给多个下游。如需"预览 + 推理并行"，使用多条独立 Pipeline 共享模型（通过 ModelRegistry）。
+- `stream_id`（Frame 字段）区分多路视频帧来源，下游节点可据此做流级别的逻辑区分。
+
+**合并拓扑下的停止机制**：
+- Pipeline 追踪每个共享 input_queue 连接了哪些上游 Source
+- 只有当所有连接的 Source 都结束后，才 stop 该共享队列
+- 单个 Source 结束不会影响其他 Source 继续向同一队列 push
 
 #### 5.2.2 SourceNode 配置
 
@@ -111,8 +146,17 @@ struct SourceConfig {
     std::string    uri;            // 文件路径、RTSP URL、设备号
     DecodeMode     decode_mode = DecodeMode::AUTO;
     int            gpu_device   = 0;    // GPU 设备号（多卡场景）
+    int64_t        stream_id    = 0;    // 流标识符，多路场景下区分帧来源
     size_t         queue_capacity = 16; // 输出队列容量
     OverflowPolicy overflow_policy = OverflowPolicy::DROP_OLDEST;
+
+    // 播放策略
+    bool           loop = false;           // 播放完后是否循环（视频/图片）
+    int            skip_frames = 0;        // 每N帧取1帧（0=不跳帧）
+
+    // 流容错（仅 StreamSource 使用）
+    int            max_retries = 5;        // 拉流失败最大重试次数（-1=无限重试）
+    int            retry_interval_ms = 3000; // 重试间隔毫秒
 };
 ```
 
@@ -153,7 +197,7 @@ frame.image ──────►  读 image        读 image+         读 detec
 | `DetectorNode` | `image` | `detections[]`（bbox, coarse class_id, confidence） | YOLOv8 检测，class_id 为模型原始类别 |
 | `ClassifierNode` | `image`, `detections[]` | `detections[i].class_id`, `detections[i].confidence` | 对每个 detection 的 bbox crop 做细粒度分类，**覆盖** class_id 与 confidence |
 | `TrackerNode` | `detections[]` | `tracks[]`, `detections[i].track_id` | ByteTrack 关联，写入轨迹 ID |
-| `PyNode` | 任意字段 | `user_data` | Python 业务节点，结果挂载到 user_data |
+| `PyNode` | 任意字段 | `user_data["key"]` | Python 业务节点，结果按 key 挂载到 user_data map |
 | `SinkNode` | 任意字段 | — | 只读，不修改 Frame |
 
 **禁止**：节点内不得替换整个 `frame.image`（会泄漏 GPU 内存）；不得拷贝 Frame（编译期已通过 `= delete` 阻止）。
@@ -168,7 +212,7 @@ struct Frame {
     Tensor   image;            // GPU / CPU tensor，含 IAllocator 管理的内存
     std::vector<Detection> detections;  // 检测结果，由 DetectorNode 填充
     std::vector<Track>     tracks;      // 追踪结果，由 TrackerNode 填充
-    std::any               user_data;  // Python 业务节点附加数据，所有权归 Frame
+    std::unordered_map<std::string, std::any> user_data;  // Python 业务节点附加数据，按 key 隔离，多节点互不干扰
 
     // 序列化钩子（预留，用于未来跨进程/跨机传输）
     std::vector<uint8_t> serialize() const;
@@ -176,7 +220,7 @@ struct Frame {
 };
 // 内存所有权：
 // - image.data 由 image.allocator 管理，Frame 析构时自动释放
-// - user_data 由 std::any 管理，Python 侧持有引用时需保证生命周期
+// - user_data 由 map 管理，各 PyNode 通过不同 key 挂载数据，互不覆盖
 ```
 
 Detection 与 Track 结构：
@@ -393,13 +437,35 @@ class InferError : public std::runtime_error {
 public:
     explicit InferError(const std::string& reason);
 };
+
+class StreamError : public std::runtime_error {
+public:
+    explicit StreamError(const std::string& uri, const std::string& reason);
+    const std::string& uri() const;
+};
 ```
 
 #### 5.2.8 ControlChannel（管理 API + 参数热更）
 
 - 内嵌 aiohttp 协程服务，与 C++ Pipeline 同进程运行，监听独立端口（默认 8080）
-- REST 接口：POST /pipelines、GET /pipelines、DELETE /pipelines/{id}、POST /pipelines/{id}/params、GET /pipelines/{id}/health
-- WebSocket 接口 /ws/{pipeline_id}/control：接收 ROI 坐标、阈值等实时参数
+- REST 接口（分离生命周期）：
+  - POST /pipelines — 创建 pipeline（body: YAML 或 JSON spec），返回 id，状态=CREATED
+  - GET /pipelines — 列表（含状态）
+  - POST /pipelines/{id}/start — 启动
+  - POST /pipelines/{id}/stop — 停止（可重启）
+  - DELETE /pipelines/{id} — 销毁（必须先 stop）
+  - POST /pipelines/{id}/params — 参数热更（body: {node_id, param_name, value}）
+  - GET /pipelines/{id}/health — 返回各节点 QueueStats + FPS
+  - GET /pipelines/{id}/nodes — 返回 per-node 详细 metrics（NodeStats）
+- WebSocket 接口：
+  - /ws/{pipeline_id}/control — 通用控制通道（双向，低频）
+    - 消息格式：`{type: "roi"|"set_param"|"ping", payload: {...}}`
+    - roi payload: `{polygons: [[x,y], ...], coord: "normalized"}`
+    - set_param payload: `{node_id: "det", param_name: "threshold", value: 0.5}`
+    - 响应：`{type: "ack"|"error"|"pong", ...}`
+  - /ws/{pipeline_id}/results — 结构化结果推送（单向，高频，服务端→前端）
+    - 每帧推送 detections/tracks 的 JSON 序列化
+    - 与 control 通道分离，避免 backpressure 互相影响
 - C++ 层 NodeBase::set_param(name, value) 使用 std::atomic 或 double-buffer，下一帧原子生效
 
 ---
