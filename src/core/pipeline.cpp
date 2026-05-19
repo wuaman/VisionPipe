@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "core/logger.h"
+#include "core/source_node.h"
 
 namespace visionpipe {
 
@@ -31,7 +32,9 @@ Pipeline::Pipeline(Pipeline&& other) noexcept
     , processed_count_(other.processed_count_.load())
     , error_count_(other.error_count_.load())
     , default_queue_capacity_(other.default_queue_capacity_)
-    , default_overflow_policy_(other.default_overflow_policy_) {}
+    , default_overflow_policy_(other.default_overflow_policy_)
+    , queue_ref_counts_(std::move(other.queue_ref_counts_))
+    , shared_queues_(std::move(other.shared_queues_)) {}
 
 Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
     if (this != &other) {
@@ -48,6 +51,8 @@ Pipeline& Pipeline::operator=(Pipeline&& other) noexcept {
         error_count_ = other.error_count_.load();
         default_queue_capacity_ = other.default_queue_capacity_;
         default_overflow_policy_ = other.default_overflow_policy_;
+        queue_ref_counts_ = std::move(other.queue_ref_counts_);
+        shared_queues_ = std::move(other.shared_queues_);
     }
     return *this;
 }
@@ -88,17 +93,58 @@ Pipeline& Pipeline::connect(NodeBase* a, NodeBase* b) {
         throw ConfigError(fmt::format("Node '{}' not found in pipeline", b_name));
     }
 
-    // 创建上游节点的输出队列（如果还没有）
     auto a_node = get_node(a_name);
-    if (!a_node->output_queue()) {
-        a_node->create_output_queue(default_queue_capacity_, default_overflow_policy_);
+    auto b_node = get_node(b_name);
+
+    if (b_node->input_queue()) {
+        // Merge topology: b already has an input_queue from a previous connect.
+        // Make a share the same queue as its output_queue.
+        auto existing_queue = b_node->input_queue();
+
+        // Find the shared_ptr that owns this queue
+        std::shared_ptr<BoundedQueue<Frame>> shared_q;
+        for (auto& sq : shared_queues_) {
+            if (sq.get() == existing_queue) {
+                shared_q = sq;
+                break;
+            }
+        }
+
+        if (!shared_q) {
+            // First merge for this queue — find original owner
+            for (auto& [name, node] : nodes_) {
+                if (node->output_queue() && node->output_queue().get() == existing_queue) {
+                    shared_q = node->output_queue();
+                    break;
+                }
+            }
+            if (shared_q) {
+                shared_queues_.push_back(shared_q);
+            }
+        }
+
+        if (shared_q) {
+            a_node->set_output_queue(shared_q);
+
+            // Update producer count
+            auto* raw_q = shared_q.get();
+            if (queue_ref_counts_.find(raw_q) == queue_ref_counts_.end()) {
+                queue_ref_counts_[raw_q] = std::make_unique<QueueRefCount>();
+                queue_ref_counts_[raw_q]->producer_count = 1;  // previous source
+            }
+            queue_ref_counts_[raw_q]->producer_count++;
+
+            VP_LOG_INFO("Merge: '{}' → '{}' (shared queue, {} producers)",
+                        a_name, b_name, queue_ref_counts_[raw_q]->producer_count);
+        }
+    } else {
+        // Normal connection: create a new output queue on a, wire to b
+        if (!a_node->output_queue()) {
+            a_node->create_output_queue(default_queue_capacity_, default_overflow_policy_);
+        }
+        b_node->set_input_queue(a_node->output_queue().get());
     }
 
-    // 将下游节点的 input_queue 指向上游节点的 output_queue
-    auto b_node = get_node(b_name);
-    b_node->set_input_queue(a_node->output_queue().get());
-
-    // 记录边
     edges_[a_name].push_back(b_name);
     reverse_edges_[b_name].push_back(a_name);
 
@@ -116,22 +162,18 @@ void Pipeline::validate_dag() const {
         throw ConfigError("Pipeline has no nodes");
     }
 
-    // 检查是否有环
     if (has_cycle()) {
         throw ConfigError("Pipeline DAG has cycle");
     }
 
-    // 检查是否有孤立节点（无入边且无出边）
     for (const auto& [name, node] : nodes_) {
         bool has_incoming = reverse_edges_.count(name) > 0 && !reverse_edges_.at(name).empty();
         bool has_outgoing = edges_.count(name) > 0 && !edges_.at(name).empty();
 
         if (!has_incoming && !has_outgoing) {
             if (node->is_source()) {
-                // 源节点无下游：合法但低效，仅警告
                 VP_LOG_WARN("Node '{}' is isolated in pipeline '{}'", name, name_);
             } else {
-                // 非源节点孤立：永远收不到帧，直接报错
                 throw ConfigError(
                     fmt::format("Non-source node '{}' is isolated in pipeline '{}' "
                                 "(no incoming edge and no outgoing edge)", name, name_));
@@ -141,7 +183,6 @@ void Pipeline::validate_dag() const {
 }
 
 bool Pipeline::has_cycle() const {
-    // Kahn's algorithm for cycle detection
     std::unordered_map<std::string, int> in_degree;
     for (const auto& [name, node] : nodes_) {
         in_degree[name] = 0;
@@ -185,10 +226,8 @@ void Pipeline::start() {
         return;
     }
 
-    // 验证 DAG
     validate_dag();
 
-    // 查找源节点
     auto sources = source_nodes();
     if (sources.empty()) {
         throw ConfigError("Pipeline has no source nodes");
@@ -198,7 +237,7 @@ void Pipeline::start() {
     VP_LOG_INFO("Starting pipeline '{}' with {} nodes, {} source(s)",
                 name_, nodes_.size(), sources.size());
 
-    // 启动所有非源节点（它们从 input_queue 消费）
+    // Start all non-source nodes
     for (auto& [name, node] : nodes_) {
         if (!node->is_source()) {
             if (!node->input_queue()) {
@@ -210,7 +249,15 @@ void Pipeline::start() {
         }
     }
 
-    // 启动源节点（在独立线程中运行）
+    // Mark source nodes as pipeline-managed
+    for (auto& source : sources) {
+        auto* src_node = dynamic_cast<SourceNode*>(source.get());
+        if (src_node) {
+            src_node->set_pipeline_managed(true);
+        }
+    }
+
+    // Start source nodes in dedicated threads
     for (auto& source : sources) {
         source_threads_.emplace_back(&Pipeline::source_worker_loop, this, source);
     }
@@ -226,12 +273,11 @@ void Pipeline::stop(bool drain) {
 
     VP_LOG_INFO("Stopping pipeline '{}' (drain={})", name_, drain);
 
-    // 停止所有节点
     for (auto& [name, node] : nodes_) {
         node->stop(drain);
     }
 
-    // 停止所有源节点的输出队列
+    // Stop all source output queues (for non-merge)
     for (auto& source : source_nodes()) {
         if (source->output_queue()) {
             source->output_queue()->stop();
@@ -244,7 +290,6 @@ void Pipeline::stop(bool drain) {
 }
 
 void Pipeline::wait_stop() {
-    // 等待源节点线程
     for (auto& t : source_threads_) {
         if (t.joinable()) {
             t.join();
@@ -252,7 +297,6 @@ void Pipeline::wait_stop() {
     }
     source_threads_.clear();
 
-    // 等待所有节点停止
     for (auto& [name, node] : nodes_) {
         node->wait_stop();
     }
@@ -305,13 +349,36 @@ void Pipeline::source_worker_loop(NodePtr source) {
 
     source->start();
 
-    // 等待源节点停止
     while (source->state() == NodeState::RUNNING ||
            source->state() == NodeState::DRAINING) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
+    on_source_done(source);
+
     VP_LOG_INFO("Source node '{}' stopped", source->name());
+}
+
+void Pipeline::on_source_done(NodePtr source) {
+    auto* raw_q = source->output_queue() ? source->output_queue().get() : nullptr;
+    if (!raw_q) return;
+
+    std::lock_guard<std::mutex> lock(source_done_mutex_);
+
+    auto it = queue_ref_counts_.find(raw_q);
+    if (it != queue_ref_counts_.end()) {
+        // Merge scenario: only stop queue when all producers are done
+        int done = ++(it->second->done_count);
+        VP_LOG_DEBUG("Source '{}' done, queue done_count={}/{}",
+                     source->name(), done, it->second->producer_count);
+        if (done >= it->second->producer_count) {
+            raw_q->stop();
+            VP_LOG_INFO("All {} producers done for shared queue, stopping it",
+                        it->second->producer_count);
+        }
+    } else {
+        // Non-merge: stop queue directly (SourceNode already stops it in its own loop)
+    }
 }
 
 }  // namespace visionpipe

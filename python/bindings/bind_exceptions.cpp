@@ -14,4 +14,5 @@ void bind_exceptions(nb::module_& m) {
     static nb::exception<CudaError> cuda_error(m, "CudaError", visionpipe_error.ptr());
     static nb::exception<ModelLoadError> model_load_error(m, "ModelLoadError", visionpipe_error.ptr());
     static nb::exception<InferError> infer_error(m, "InferError", visionpipe_error.ptr());
+    static nb::exception<StreamError> stream_error(m, "StreamError", visionpipe_error.ptr());
 }

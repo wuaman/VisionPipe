@@ -36,6 +36,7 @@ NotFoundError = _ext.NotFoundError
 CudaError = _ext.CudaError
 ModelLoadError = _ext.ModelLoadError
 InferError = _ext.InferError
+StreamError = _ext.StreamError
 
 PipelineState = _ext.PipelineState
 PipelineStatus = _ext.PipelineStatus
@@ -61,6 +62,7 @@ IModelEngine = _ext.IModelEngine
 MockModelEngine = _ext.MockModelEngine
 TrtModelEngine = _ext.TrtModelEngine
 NodeBase = _ext.NodeBase
+SourceNode = _ext.SourceNode
 _PyNodeCpp = _ext.PyNode
 FileSource = _ext.FileSource
 RtspSource = _ext.RtspSource
@@ -114,6 +116,7 @@ __all__ = [
     "CudaError",
     "ModelLoadError",
     "InferError",
+    "StreamError",
     "PipelineState",
     "PipelineStatus",
     "NodeState",
@@ -136,6 +139,7 @@ __all__ = [
     "MockModelEngine",
     "TrtModelEngine",
     "NodeBase",
+    "SourceNode",
     "FileSource",
     "RtspSource",
     "ByteTrackNode",

@@ -47,4 +47,11 @@ public:
         : VisionPipeError("InferError: " + msg) {}
 };
 
+/// @brief 视频流错误（解码失败、连接断开等）
+class StreamError : public VisionPipeError {
+public:
+    explicit StreamError(const std::string& msg)
+        : VisionPipeError("StreamError: " + msg) {}
+};
+
 }  // namespace visionpipe

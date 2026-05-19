@@ -11,6 +11,7 @@
 #include "core/bounded_queue.h"
 #include "core/frame.h"
 #include "core/node_base.h"
+#include "core/source_node.h"
 #include "hal/imodel_engine.h"
 #include "hal/nvidia/trt_model_engine.h"
 #include "nodes/source/file_source.h"
@@ -60,7 +61,9 @@ void bind_nodes(nb::module_& m) {
             return nb::cast(std::move(*result));
         }, nb::arg("timeout_ms") = 500);
 
-    nb::class_<FileSource, NodeBase>(m, "FileSource")
+    nb::class_<SourceNode, NodeBase>(m, "SourceNode");
+
+    nb::class_<FileSource, SourceNode>(m, "FileSource")
         .def(nb::init<const SourceConfig&>(), nb::arg("config"))
         .def(nb::init<const std::string&, DecodeMode>(), nb::arg("uri"), nb::arg("mode") = DecodeMode::AUTO)
         .def("width", &FileSource::width)
@@ -71,7 +74,7 @@ void bind_nodes(nb::module_& m) {
         .def("actual_decode_mode", &FileSource::actual_decode_mode)
         .def("config", &FileSource::config, nb::rv_policy::reference_internal);
 
-    nb::class_<RtspSource, NodeBase>(m, "RtspSource")
+    nb::class_<RtspSource, SourceNode>(m, "RtspSource")
         .def(nb::init<const SourceConfig&>(), nb::arg("config"))
         .def(nb::init<const std::string&, DecodeMode>(), nb::arg("uri"), nb::arg("mode") = DecodeMode::AUTO)
         .def("width", &RtspSource::width)

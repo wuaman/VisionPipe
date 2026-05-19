@@ -111,7 +111,11 @@ void bind_frame(nb::module_& m) {
         .def_rw("gpu_device", &SourceConfig::gpu_device)
         .def_rw("queue_capacity", &SourceConfig::queue_capacity)
         .def_rw("overflow_policy", &SourceConfig::overflow_policy)
-        .def_rw("stream_id", &SourceConfig::stream_id);
+        .def_rw("stream_id", &SourceConfig::stream_id)
+        .def_rw("loop", &SourceConfig::loop)
+        .def_rw("skip_frames", &SourceConfig::skip_frames)
+        .def_rw("max_retries", &SourceConfig::max_retries)
+        .def_rw("retry_interval_ms", &SourceConfig::retry_interval_ms);
 
     nb::class_<ByteTrackConfig>(m, "ByteTrackConfig")
         .def(nb::init<>())

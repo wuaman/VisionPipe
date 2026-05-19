@@ -1,14 +1,12 @@
 #include "nodes/source/file_source.h"
 
-#include <chrono>
-
-#include "core/logger.h"
-
 #include <cstring>
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
 
+#include "core/error.h"
+#include "core/logger.h"
 #include "core/tensor.h"
 
 #ifdef VISIONPIPE_USE_CUDA
@@ -18,23 +16,14 @@
 namespace visionpipe {
 
 FileSource::FileSource(const SourceConfig &config)
-    : NodeBase("FileSource:" + config.uri), config_(config),
-      actual_decode_mode_(config.decode_mode) {
-  create_output_queue(config_.queue_capacity, config_.overflow_policy);
-}
+    : SourceNode("FileSource:" + config.uri, config),
+      actual_decode_mode_(config.decode_mode) {}
 
 FileSource::FileSource(const std::string &uri, DecodeMode mode)
     : FileSource(SourceConfig(uri, mode)) {}
 
-FileSource::~FileSource() {
-  stop(false);
-  if (source_thread_.joinable()) {
-    source_thread_.join();
-  }
-}
-
 FileSource::FileSource(FileSource &&other) noexcept
-    : NodeBase(std::move(other)), config_(std::move(other.config_)),
+    : SourceNode(std::move(other)),
       actual_decode_mode_(other.actual_decode_mode_),
       cpu_capture_(std::move(other.cpu_capture_))
 #ifdef VISIONPIPE_USE_CUDA
@@ -43,8 +32,7 @@ FileSource::FileSource(FileSource &&other) noexcept
 #endif
       ,
       width_(other.width_), height_(other.height_), fps_(other.fps_),
-      frame_count_(other.frame_count_),
-      current_frame_(other.current_frame_.load()) {
+      frame_count_(other.frame_count_), current_frame_(other.current_frame_) {
 #ifdef VISIONPIPE_USE_CUDA
   other.gpu_reader_ = nullptr;
 #endif
@@ -52,17 +40,12 @@ FileSource::FileSource(FileSource &&other) noexcept
   other.height_ = 0;
   other.fps_ = 0.0;
   other.frame_count_ = -1;
+  other.current_frame_ = 0;
 }
 
 FileSource &FileSource::operator=(FileSource &&other) noexcept {
   if (this != &other) {
-    stop(false);
-    if (source_thread_.joinable()) {
-      source_thread_.join();
-    }
-
-    NodeBase::operator=(std::move(other));
-    config_ = std::move(other.config_);
+    SourceNode::operator=(std::move(other));
     actual_decode_mode_ = other.actual_decode_mode_;
     cpu_capture_ = std::move(other.cpu_capture_);
 #ifdef VISIONPIPE_USE_CUDA
@@ -73,42 +56,24 @@ FileSource &FileSource::operator=(FileSource &&other) noexcept {
     height_ = other.height_;
     fps_ = other.fps_;
     frame_count_ = other.frame_count_;
-    current_frame_ = other.current_frame_.load();
+    current_frame_ = other.current_frame_;
 
     other.width_ = 0;
     other.height_ = 0;
     other.fps_ = 0.0;
     other.frame_count_ = -1;
+    other.current_frame_ = 0;
   }
   return *this;
 }
 
-void FileSource::process(Frame &frame) { (void)frame; }
-
-void FileSource::start() {
-  if (state_ == NodeState::RUNNING) {
-    return;
+void FileSource::on_open() {
+  if (config_.uri.empty()) {
+    throw ConfigError("Video file URI is empty");
   }
 
-  on_init();
-  state_ = NodeState::RUNNING;
-
-  source_thread_ = std::thread(&FileSource::source_worker_loop, this);
-
-  VP_LOG_INFO(
-      "FileSource '{}' started, decode_mode={}, resolution={}x{}, fps={}",
-      name_, static_cast<int>(actual_decode_mode_), width_, height_, fps_);
-}
-
-void FileSource::stop(bool drain) {
-  NodeBase::stop(drain);
-  if (output_queue_) {
-    output_queue_->stop();
-  }
-}
-
-void FileSource::on_init() {
   bool gpu_init_success = false;
+  current_frame_ = 0;
 
   switch (config_.decode_mode) {
   case DecodeMode::AUTO:
@@ -138,58 +103,33 @@ void FileSource::on_init() {
     actual_decode_mode_ = DecodeMode::CPU;
     break;
   }
+
+  VP_LOG_INFO(
+      "FileSource '{}' opened, decode_mode={}, resolution={}x{}, fps={}",
+      name_, static_cast<int>(actual_decode_mode_), width_, height_, fps_);
 }
 
-void FileSource::on_stop() {
-  // Resources are cleaned up in source_worker_loop() after the read loop exits,
-  // to avoid racing with the source thread that may be blocked in read().
-}
+bool FileSource::read_next(Frame &frame) {
+  bool read_success = false;
 
-void FileSource::source_worker_loop() {
-  VP_LOG_DEBUG("FileSource '{}' worker thread started", name_);
-
-  Frame frame;
-  frame.stream_id = config_.stream_id;
-
-  while (state_ == NodeState::RUNNING) {
-    bool read_success = false;
-
-    if (actual_decode_mode_ == DecodeMode::GPU) {
-      read_success = read_frame_gpu(frame);
-    } else {
-      read_success = read_frame_cpu(frame);
-    }
-
-    if (!read_success) {
-      VP_LOG_INFO(
-          "FileSource '{}' reached end of video or read failed at frame {}",
-          name_, current_frame_.load());
-      break;
-    }
-
-    frame.frame_id = current_frame_.fetch_add(1);
-    ++processed_count_;
-
-    if (output_queue_) {
-      output_queue_->push(std::move(frame));
-    }
-
-    frame = Frame();
-    frame.stream_id = config_.stream_id;
+  if (actual_decode_mode_ == DecodeMode::GPU) {
+    read_success = read_frame_gpu(frame);
+  } else {
+    read_success = read_frame_cpu(frame);
   }
 
-  // Clean up decode resources here (safe: we are the only thread using them).
+  if (read_success) {
+    ++current_frame_;
+  }
+
+  return read_success;
+}
+
+void FileSource::on_close() {
   cpu_capture_.reset();
 #ifdef VISIONPIPE_USE_CUDA
   gpu_reader_ = nullptr;
 #endif
-
-  state_ = NodeState::STOPPED;
-  if (output_queue_) {
-    output_queue_->stop();
-  }
-  VP_LOG_INFO("FileSource '{}' stopped, total frames: {}", name_,
-              current_frame_.load());
 }
 
 bool FileSource::try_init_gpu_decoder() {
@@ -200,10 +140,8 @@ bool FileSource::try_init_gpu_decoder() {
   }
 
   try {
-    // 使用 createVideoReader 工厂函数创建 GPU 视频阅读器
     gpu_reader_ = cv::cudacodec::createVideoReader(config_.uri);
 
-    // 读取第一帧以获取实际分辨率
     cv::cuda::GpuMat first_frame;
     if (!gpu_reader_->nextFrame(first_frame)) {
       VP_LOG_WARN("FileSource '{}' failed to read first frame for GPU init",
@@ -215,10 +153,9 @@ bool FileSource::try_init_gpu_decoder() {
     width_ = first_frame.cols;
     height_ = first_frame.rows;
 
-    // 重新创建以从头播放
     gpu_reader_ = cv::cudacodec::createVideoReader(config_.uri);
 
-    fps_ = 25.0; // 默认值，cv::cudacodec 不直接提供帧率
+    fps_ = 25.0;
 
     VP_LOG_INFO("FileSource '{}' GPU decoder initialized: {}x{}", name_, width_,
                 height_);
@@ -269,11 +206,8 @@ bool FileSource::read_frame_gpu(Frame &frame) {
       return false;
     }
 
-    // GPU 解码帧直接在显存中
     frame.pts_us =
         current_frame_ * static_cast<int64_t>(1e6 / (fps_ > 0 ? fps_ : 25.0));
-
-    // TODO: 实现从 GpuMat 到 Tensor 的零拷贝包装
 
     return true;
   } catch (const cv::Exception &e) {
@@ -300,7 +234,6 @@ bool FileSource::read_frame_cpu(Frame &frame) {
     frame.pts_us =
         static_cast<int64_t>(cpu_capture_->get(cv::CAP_PROP_POS_MSEC) * 1000);
 
-    // BGR (OpenCV default) → RGB, HWC uint8 Tensor
     cv::Mat rgb;
     cv::cvtColor(cpu_frame, rgb, cv::COLOR_BGR2RGB);
 

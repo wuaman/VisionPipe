@@ -996,12 +996,12 @@
 | T0.1 | 目录结构与 CMake 配置 | P0 | P0 | [x] | — |
 | T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [x] | T0.1 |
 | T0.3 | 日志系统初始化 | P0 | P0 | [x] | T0.1 |
-| T1.1 | 节点基类与 DAG | P1 | P0 | [ ] | T0.2 | 需要：SourceNode 中间抽象类 + 合并拓扑支持 + SourceConfig 扩展 |
+| T1.1 | 节点基类与 DAG | P1 | P0 | [x] | T0.2 |
 | T1.2 | PipelineManager + 生命周期 | P1 | P0 | [x] | T1.1 |
 | T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [x] | T0.2 |
 | T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
 | T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [x] | T1.3 |
-| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 | 需要：继承 SourceNode（非 NodeBase）+ SourceConfig 补充 Phase 1 字段 |
+| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [ ] | T1.1 |
 | T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | — | P1 | 未来扩展 | T2.2a | 移至「未来扩展」章节，不纳入正式排期 |
 | T2.3 | YOLOv8 检测节点 | P2 | P0 | [ ] | T2.1、T2.2a | 需要：InferNode 改为 process_batch 接口 |
 | T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [ ] | T2.1 | 需要：target_classes 双模式 + 结果写入 frame.classifications（非覆盖 detections） |

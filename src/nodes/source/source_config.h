@@ -21,6 +21,11 @@ struct SourceConfig {
   OverflowPolicy overflow_policy = OverflowPolicy::DROP_OLDEST; ///< 溢出策略
   int64_t stream_id = 0; ///< 流标识符
 
+  bool loop = false;            ///< 文件源循环播放
+  int skip_frames = 0;          ///< 跳帧采样（0=不跳帧，N=每N+1帧取1帧）
+  int max_retries = 5;          ///< 读取失败最大重试次数
+  int retry_interval_ms = 1000; ///< 重试间隔（毫秒）
+
   /// @brief 默认构造函数
   SourceConfig() = default;
 

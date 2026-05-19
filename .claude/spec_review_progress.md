@@ -22,12 +22,12 @@ Next phase: (all phases confirmed)
 - **1-C 停止机制** → 队列停止级联（Source 结束 → output_queue_.stop() → 下游检测 stopped_and_empty() → 自停 → 级联传播）。非 EOF 哨兵帧。
 
 #### 代码验证结果
-- SourceNode 中间抽象类：**不匹配** — FileSource/RtspSource 直接继承 NodeBase，无中间类
-- SourceConfig 扩展 (loop/skip_frames/retry)：**不匹配** — 代码中无这些字段
-- 合并支持 (多 Source → 共享 input_queue)：**不匹配** — 代码中无此功能
+- SourceNode 中间抽象类：已修复 ✓（src/core/source_node.h, source_node.cpp — Template Method 模式）
+- SourceConfig 扩展 (loop/skip_frames/retry)：已修复 ✓（source_config.h 新增 4 字段）
+- 合并支持 (多 Source → 共享 input_queue)：已修复 ✓（pipeline.cpp connect() 合并拓扑 + producer count 跟踪）
 - 队列停止级联：匹配 ✓（node_base.cpp:130-134, 152-158）
-- StreamError 异常：**不匹配** — 代码中无此类型
-- T1.1 已标记为未完成
+- StreamError 异常：已修复 ✓（error.h 新增 StreamError : VisionPipeError）
+- T1.1 已标记为完成 ✓
 
 ### Phase 2: NVIDIA 推理 + 编解码（已确认）
 - **2-A HAL NVIDIA 实现** → TrtModelEngine/TrtExecContext（独立 CUDA stream）/CudaAllocator，承接 Phase 1 parallel_workers
@@ -39,7 +39,7 @@ Next phase: (all phases confirmed)
 
 #### 代码验证结果
 - T2.1 HAL NVIDIA：匹配 ✓
-- T2.2a FileSource 继承：**不匹配** — 继承 NodeBase 而非 SourceNode；SourceConfig 缺少 Phase 1 字段
+- T2.2a FileSource 继承：已修复 ✓ — FileSource/RtspSource 继承 SourceNode；SourceConfig 含 Phase 1 字段
 - InferNode batch 机制：**不匹配** — 当前为单帧 infer_frame 接口，无 process_batch
 - Frame.classifications：已修复 ✓ — 新增 Classification 结构体 + classifications 向量（frame.h:40-44, 53）
 - ClassifierNode 双模式：**不匹配** — 无 target_classes，结果覆盖 detections

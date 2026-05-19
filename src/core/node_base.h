@@ -102,6 +102,11 @@ public:
     void create_output_queue(size_t capacity = 16,
                              OverflowPolicy policy = OverflowPolicy::DROP_OLDEST);
 
+    /// @brief 设置输出队列（用于合并拓扑，多 Source 共享一个下游 input_queue）
+    void set_output_queue(std::shared_ptr<BoundedQueue<Frame>> queue) {
+        output_queue_ = std::move(queue);
+    }
+
     /// @brief 获取节点统计信息
     NodeStats stats() const;
 
