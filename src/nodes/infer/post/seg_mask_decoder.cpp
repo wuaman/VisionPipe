@@ -36,14 +36,6 @@ void SegMaskDecoder::decode(const Tensor& det_output,
         return;
     }
 
-    // 将 GPU 数据下载到 CPU
-    std::vector<float> host_det(det_output.numel());
-    if (det_output.memory_type() == MemoryType::CUDA_DEVICE) {
-        cudaMemcpy(host_det.data(), det_output.data, det_output.nbytes, cudaMemcpyDeviceToHost);
-    } else {
-        std::copy_n(static_cast<const float*>(det_output.data), det_output.numel(), host_det.begin());
-    }
-
     std::vector<float> host_proto(proto_output.numel());
     if (proto_output.memory_type() == MemoryType::CUDA_DEVICE) {
         cudaMemcpy(host_proto.data(), proto_output.data, proto_output.nbytes, cudaMemcpyDeviceToHost);
@@ -84,7 +76,8 @@ void SegMaskDecoder::decode(const Tensor& det_output,
                     mask_w, mask_h, params.mask_threshold);
 
         // 裁剪 mask 到 bbox 范围
-        crop_mask_to_bbox(masks[i], det.bbox, mask_w, mask_h);
+        crop_mask_to_bbox(masks[i], det.bbox, mask_w, mask_h,
+                          params.input_width, params.input_height);
 
         // 缩放 bbox 到原图空间
         scale_bbox(det.bbox, letterbox_params, orig_width, orig_height);
@@ -269,17 +262,10 @@ void SegMaskDecoder::compute_mask(const float* proto,
 
 void SegMaskDecoder::crop_mask_to_bbox(std::vector<uint8_t>& mask,
                                        const float bbox[4],
-                                       int mask_width, int mask_height) {
-    // bbox 在模型输入空间 (letterbox 空间)，需要转换到 mask 空间
-    // 假设 mask 尺寸与模型输入尺寸成比例
-
-    // 将 bbox 坐标从模型空间转换到 mask 空间
-    // 这里简化处理：bbox 已经是模型输入空间的坐标
-    // mask 的尺寸通常是 160x160 (对于 640x640 输入)
-
-    // 计算缩放比例
-    const float scale_x = static_cast<float>(mask_width) / 640.0f;
-    const float scale_y = static_cast<float>(mask_height) / 640.0f;
+                                       int mask_width, int mask_height,
+                                       int input_width, int input_height) {
+    const float scale_x = static_cast<float>(mask_width) / static_cast<float>(input_width);
+    const float scale_y = static_cast<float>(mask_height) / static_cast<float>(input_height);
 
     int x1 = static_cast<int>(bbox[0] * scale_x);
     int y1 = static_cast<int>(bbox[1] * scale_y);
@@ -361,18 +347,14 @@ float SegMaskDecoder::compute_mask_bbox_iou(const std::vector<uint8_t>& mask,
     y2 = std::max(0, std::min(y2, mask_height));
 
     int intersection = 0;
-    int union_count = 0;
-
     for (int y = y1; y < y2; ++y) {
         for (int x = x1; x < x2; ++x) {
             if (mask[y * mask_width + x] > 0) {
                 ++intersection;
-                ++union_count;
             }
         }
     }
 
-    // 计算 bbox 面积减去交集
     int bbox_area = (x2 - x1) * (y2 - y1);
     int mask_area = 0;
     for (int y = 0; y < mask_height; ++y) {
@@ -383,8 +365,7 @@ float SegMaskDecoder::compute_mask_bbox_iou(const std::vector<uint8_t>& mask,
         }
     }
 
-    union_count = bbox_area + mask_area - intersection;
-
+    int union_count = bbox_area + mask_area - intersection;
     return union_count > 0 ? static_cast<float>(intersection) / union_count : 0.0f;
 }
 

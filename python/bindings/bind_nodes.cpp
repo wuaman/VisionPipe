@@ -91,7 +91,8 @@ void bind_nodes(nb::module_& m) {
              nb::arg("name") = "bytetrack")
         .def("config", &ByteTrackNode::config, nb::rv_policy::reference_internal)
         .def("reset", &ByteTrackNode::reset)
-        .def("active_track_count", &ByteTrackNode::active_track_count);
+        .def("active_track_count", &ByteTrackNode::active_track_count)
+        .def("set_param", &ByteTrackNode::set_param);
 
     nb::class_<DetectorNode, NodeBase>(m, "DetectorNode")
         .def(nb::init<std::shared_ptr<IModelEngine>, const DetectorConfig&, const std::string&>(),

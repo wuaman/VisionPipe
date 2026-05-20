@@ -31,7 +31,7 @@ struct Detection {
 struct Track {
     int64_t track_id = 0;    ///< 追踪 ID
     int class_id = 0;        ///< 类别 ID
-    float bbox[4];           ///< 边界框 [x1, y1, x2, y2]
+    float bbox[4] = {0, 0, 0, 0};  ///< 边界框 [x1, y1, x2, y2]
     int age = 0;             ///< 追踪年龄（帧数）
     float confidence = 0.0f;  ///< 置信度
 };
@@ -52,7 +52,7 @@ struct Frame {
     std::vector<Detection> detections;  ///< 检测结果
     std::vector<Classification> classifications;  ///< 分类结果
     std::vector<Track> tracks;          ///< 追踪结果
-    std::vector<std::vector<uint8_t>> masks;  ///< 分割掩码，每个 detection 对应一个，orig_h×orig_w 行优先 0/1
+    std::vector<std::vector<uint8_t>> masks;  ///< 分割掩码，每个 detection 对应一个，orig_h×orig_w 行优先 0/255
     std::unordered_map<std::string, std::any> user_data;  ///< 用户附加数据，按 key 隔离
 
     /// @brief 默认构造函数

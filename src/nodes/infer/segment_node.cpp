@@ -213,15 +213,17 @@ void SegmentNode::postprocess(Frame& frame, const Tensor& det_output,
     params.nms_threshold = config_.nms_threshold;
     params.mask_threshold = config_.mask_threshold;
     params.max_detections = config_.max_detections;
+    params.input_width = config_.input_width;
+    params.input_height = config_.input_height;
 
     std::vector<std::vector<uint8_t>> masks;
     SegMaskDecoder::decode(det_output, proto_output, frame.detections, masks,
                           params, letterbox_params, orig_width, orig_height);
 
-    frame.masks = masks;
+    frame.masks = std::move(masks);
     {
         std::lock_guard<std::mutex> lock(masks_mutex_);
-        last_masks_ = std::move(masks);
+        last_masks_ = frame.masks;
     }
 }
 

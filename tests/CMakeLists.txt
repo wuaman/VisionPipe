@@ -11,6 +11,8 @@ set(VISIONPIPE_TEST_SOURCES
     unit/cpp/test_model_registry.cpp
     unit/cpp/test_parallel_workers.cpp
     unit/cpp/test_bytetrack_node.cpp
+    unit/cpp/test_bytetrack_mota.cpp
+    unit/cpp/test_segment_node.cpp
     unit/cpp/test_source_node.cpp
 )
 
@@ -20,6 +22,7 @@ target_link_libraries(visionpipe_tests
     PRIVATE
         visionpipe_core
         visionpipe_nodes
+        ${OpenCV_LIBS}
         GTest::gtest
         GTest::gtest_main
 )
@@ -28,10 +31,15 @@ target_include_directories(visionpipe_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
+if(VISIONPIPE_USE_CUDA)
+    target_include_directories(visionpipe_tests PRIVATE ${CUDA_INCLUDE_DIRS})
+endif()
+
 set(VISIONPIPE_INTEGRATION_TEST_SOURCES
     integration/cpp/test_trt_engine.cpp
     integration/cpp/test_source_nodes.cpp
     integration/cpp/test_sinks.cpp
+    integration/cpp/test_segment_tracker.cpp
 )
 
 # 添加推理节点测试
@@ -39,7 +47,6 @@ if(VISIONPIPE_USE_CUDA AND VISIONPIPE_USE_TENSORRT)
     list(APPEND VISIONPIPE_INTEGRATION_TEST_SOURCES
         integration/cpp/test_detector_node.cpp
         integration/cpp/test_classifier_node.cpp
-        unit/cpp/test_segment_node.cpp
     )
 endif()
 

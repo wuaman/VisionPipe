@@ -218,6 +218,7 @@ void bind_frame(nb::module_& m) {
         .def_rw("detections", &Frame::detections)
         .def_rw("classifications", &Frame::classifications)
         .def_rw("tracks", &Frame::tracks)
+        .def_rw("masks", &Frame::masks)
         .def("clear", &Frame::clear)
         .def("has_image", &Frame::has_image)
         .def("image_numpy", &frame_image_numpy)

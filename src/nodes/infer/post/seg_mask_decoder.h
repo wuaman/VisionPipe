@@ -13,6 +13,8 @@ struct SegMaskParams {
     float score_threshold = 0.25f;  ///< 检测置信度阈值
     float nms_threshold = 0.45f;    ///< NMS IoU 阈值
     int max_detections = 100;       ///< 最大检测数量
+    int input_width = 640;          ///< 模型输入宽度
+    int input_height = 640;         ///< 模型输入高度
 };
 
 /// @brief YOLOv8-seg 分割掩码解码器
@@ -98,7 +100,8 @@ private:
     /// @brief 裁剪 mask 到 bbox 范围
     static void crop_mask_to_bbox(std::vector<uint8_t>& mask,
                                   const float bbox[4],
-                                  int mask_width, int mask_height);
+                                  int mask_width, int mask_height,
+                                  int input_width, int input_height);
 
     /// @brief 缩放 bbox 从模型空间到原图空间
     static void scale_bbox(float bbox[4],

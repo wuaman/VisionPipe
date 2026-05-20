@@ -39,34 +39,12 @@ void ByteTrackNode::process(Frame& frame) {
         boxes.push_back(box);
     }
 
-    // 执行追踪
-    auto active_tracks = tracker_->update(boxes);
+    std::unordered_map<size_t, int64_t> det_track_map;
+    auto active_tracks = tracker_->update(boxes, det_track_map);
 
-    // 构建追踪 ID 映射
-    std::unordered_map<int64_t, int64_t> box_to_track;  ///< detection index -> track_id
-    for (size_t i = 0; i < frame.detections.size(); ++i) {
-        // 找到匹配的轨迹
-        for (const auto& track : active_tracks) {
-            // 简单匹配：基于 bbox 重叠
-            float iou = 0.0f;
-            {
-                float x1 = std::max(frame.detections[i].bbox[0], track.box().bbox[0]);
-                float y1 = std::max(frame.detections[i].bbox[1], track.box().bbox[1]);
-                float x2 = std::min(frame.detections[i].bbox[2], track.box().bbox[2]);
-                float y2 = std::min(frame.detections[i].bbox[3], track.box().bbox[3]);
-
-                float intersection = std::max(0.0f, x2 - x1) * std::max(0.0f, y2 - y1);
-                float area_det = (frame.detections[i].bbox[2] - frame.detections[i].bbox[0]) *
-                                (frame.detections[i].bbox[3] - frame.detections[i].bbox[1]);
-                float area_track = track.box().area();
-                float union_area = area_det + area_track - intersection;
-                iou = union_area > 0.0f ? intersection / union_area : 0.0f;
-            }
-
-            if (iou > config_.match_thresh && track.class_id() == frame.detections[i].class_id) {
-                frame.detections[i].track_id = track.id();
-                break;
-            }
+    for (const auto& [det_idx, track_id] : det_track_map) {
+        if (det_idx < frame.detections.size()) {
+            frame.detections[det_idx].track_id = track_id;
         }
     }
 
@@ -125,7 +103,6 @@ bool ByteTrackNode::set_param(const std::string& name, const ParamValue& value) 
                      name_, name, e.what());
     }
 
-    // 未知参数直接返回 false，不调用基类避免死锁
     return false;
 }
 
