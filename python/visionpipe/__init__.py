@@ -84,18 +84,62 @@ AnnotatorConfig = _ext.AnnotatorConfig
 AnnotatorNode = _ext.AnnotatorNode
 
 
-def _node_rshift(self: NodeBase, other: NodeBase) -> PipelineBuilder:
-    builder = PipelineBuilder()
-    builder.__rshift__(self)
-    return builder.__rshift__(other)
+def _unwrap_node(obj):
+    """Extract the C++ NodeBase from a PyNode wrapper or return as-is."""
+    from visionpipe.py_node import PyNode as _PyNodePy
+    if isinstance(obj, _PyNodePy):
+        return obj._cpp_node
+    return obj
 
 
-def _pipeline_run(self: Pipeline) -> Pipeline:
+def _node_rshift(self, other):
+    """NodeBase >> NodeBase → Pipeline (with _tail tracking)."""
+    other_cpp = _unwrap_node(other)
+    self_cpp = _unwrap_node(self)
+    pipe = Pipeline()
+    pipe.add_node(self_cpp)
+    pipe.add_node(other_cpp)
+    pipe.connect(self_cpp, other_cpp)
+    pipe._tail = other_cpp
+    return pipe
+
+
+def _node_rrshift(self, other):
+    """Handles [src1, src2] >> node → Pipeline with merge topology."""
+    if isinstance(other, (list, tuple)):
+        pipe = Pipeline()
+        self_cpp = _unwrap_node(self)
+        pipe.add_node(self_cpp)
+        for src in other:
+            src_cpp = _unwrap_node(src)
+            pipe.add_node(src_cpp)
+            pipe.connect(src_cpp, self_cpp)
+        pipe._tail = self_cpp
+        return pipe
+    return NotImplemented
+
+
+def _pipeline_rshift(self, other):
+    """Pipeline >> NodeBase → Pipeline (chaining)."""
+    other_cpp = _unwrap_node(other)
+    self.add_node(other_cpp)
+    tail = getattr(self, "_tail", None)
+    if tail is not None:
+        self.connect(tail, other_cpp)
+    self._tail = other_cpp
+    return self
+
+
+def _pipeline_run(self, block: bool = False, **config) -> "Pipeline":
     self.start()
+    if block:
+        self.wait_stop()
     return self
 
 
 NodeBase.__rshift__ = _node_rshift
+NodeBase.__rrshift__ = _node_rrshift
+Pipeline.__rshift__ = _pipeline_rshift
 Pipeline.run = _pipeline_run
 
 from visionpipe.serialization import (  # noqa: E402

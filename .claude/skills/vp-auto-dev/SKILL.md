@@ -11,6 +11,17 @@ description: |
 
 # VisionPipe-py Auto-Dev Skill
 
+## 语言要求
+
+**所有输出必须使用中文**，包括但不限于：
+- 任务查找与状态汇报
+- 代码注释之外的所有交互文本
+- 任务完成报告
+- 错误分析与修复说明
+- 向用户的提问与确认
+
+代码中的标识符、commit type（feat/fix/build 等）保持英文，commit 描述用中文。
+
 ## 概述
 
 本 skill 用于 VisionPipe-py 项目的自动化开发流程。基于 `DEV_SPEC.md` 规范文件，自动查找待实现任务、编写代码、运行测试、更新状态。
@@ -366,7 +377,7 @@ Task: T0.2
 
 ### Git 状态
 - 是否提交：是/否/待确认
-- Commit 信息：`build(cmake): add project skeleton and CMake configuration`
+- Commit 信息：`build(cmake): 添加项目骨架与 CMake 配置`
 ```
 
 ## 注意事项

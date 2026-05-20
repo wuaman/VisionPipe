@@ -55,9 +55,9 @@ Next phase: (all phases confirmed)
 
 #### 代码验证结果
 - nanobind 绑定核心类：基础绑定已实现，但 API 不匹配新规范
-- `>>` 返回 PipelineBuilder 而非 Pipeline：**不匹配**
-- 合并语法 `[src1, src2] >> det`：**不匹配** — 不支持
-- `run(block=False)` API：**不匹配** — 当前 run() 只是 start() 别名
+- `>>` 返回 Pipeline：已修复 ✓ — NodeBase.__rshift__ 直接返回 Pipeline，Pipeline.__rshift__ 链式追加
+- 合并语法 `[src1, src2] >> det`：已修复 ✓ — NodeBase.__rrshift__ 处理 list/tuple 合并拓扑
+- `run(block=False)` API：已修复 ✓ — run(block=False) 非阻塞，run(block=True) 阻塞至 source 结束
 - CustomNode / ProcessProxyNode / FrameView：**不匹配** — 不存在
 - YAML CustomNode 自动导入：**不匹配** — 不支持
 - T3.1/T3.2/T3.3 全部标记为未完成
@@ -127,3 +127,4 @@ Next phase: (all phases confirmed)
 - 2026-05-15: Phase 4 确认，关键决策：分离生命周期、通用控制通道、JsonResult 独立 WS、MjpegSink 默认关闭、SinkNode 基类统一 enabled、NodeStats 补齐 latency_ms+state。T4.1/T4.2/T4.3/T4.4 标记为 [ ]
 - 2026-05-19: Phase 5 确认，重新定位为「集成验证 + 收尾」。移除性能 benchmark（后续专项），新增 T5.2 端到端验证测试（三层递进），T2.2b ICodec HAL 移至未来扩展，T5.1 标记回 [ ]（测试资产路径需修复）
 - 2026-05-20: T2.3 补齐完成 — InferNode 从 infer_frame 重构为 process_batch 接口，DetectorNode/ClassifierNode/SegmentNode 全部适配，parallel_workers 测试恢复启用并通过
+- 2026-05-20: T3.1 补齐完成 — DSL 重构：>> 返回 Pipeline（非 PipelineBuilder）、合并语法 [src1,src2]>>det、run(block=False)/stop() API

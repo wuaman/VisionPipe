@@ -27,7 +27,7 @@ std::unordered_map<std::string, std::shared_ptr<NodeBase>> pipeline_nodes(const 
 }  // namespace
 
 void bind_pipeline(nb::module_& m) {
-    nb::class_<Pipeline>(m, "Pipeline")
+    nb::class_<Pipeline>(m, "Pipeline", nb::dynamic_attr())
         .def(nb::init<const PipelineConfig&>(), nb::arg("config") = PipelineConfig())
         .def("add_node", [](Pipeline& pipeline, const std::shared_ptr<NodeBase>& node) -> Pipeline& {
             return pipeline.add_node(node);

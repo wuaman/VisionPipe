@@ -77,6 +77,12 @@ class PyNode:
     def is_source(self) -> bool:
         return False
 
+    def __rshift__(self, other):
+        return self._cpp_node.__rshift__(other)
+
+    def __rrshift__(self, other):
+        return self._cpp_node.__rrshift__(other)
+
     def is_sink(self) -> bool:
         return False
 
