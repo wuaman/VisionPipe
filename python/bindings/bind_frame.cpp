@@ -5,6 +5,7 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <any>
 #include <array>
 #include <stdexcept>
 
@@ -62,6 +63,39 @@ void set_track_bbox(Track& track, const std::array<float, 4>& bbox) {
     for (size_t i = 0; i < bbox.size(); ++i) {
         track.bbox[i] = bbox[i];
     }
+}
+
+void frame_set_user_data(Frame& frame, const std::string& key, nb::object value) {
+    if (value.is_none()) {
+        frame.user_data.erase(key);
+    } else if (nb::isinstance<nb::bool_>(value)) {
+        frame.user_data[key] = nb::cast<bool>(value);
+    } else if (nb::isinstance<nb::int_>(value)) {
+        frame.user_data[key] = nb::cast<int64_t>(value);
+    } else if (nb::isinstance<nb::float_>(value)) {
+        frame.user_data[key] = nb::cast<double>(value);
+    } else if (nb::isinstance<nb::str>(value)) {
+        frame.user_data[key] = nb::cast<std::string>(value);
+    } else {
+        throw nb::type_error("user_data values must be None, bool, int, float, or str");
+    }
+}
+
+nb::object frame_get_user_data(const Frame& frame, const std::string& key) {
+    auto it = frame.user_data.find(key);
+    if (it == frame.user_data.end()) return nb::none();
+    const auto& val = it->second;
+    if (auto* v = std::any_cast<bool>(&val)) return nb::cast(*v);
+    if (auto* v = std::any_cast<int>(&val)) return nb::cast(*v);
+    if (auto* v = std::any_cast<int64_t>(&val)) return nb::cast(*v);
+    if (auto* v = std::any_cast<float>(&val)) return nb::cast(*v);
+    if (auto* v = std::any_cast<double>(&val)) return nb::cast(*v);
+    if (auto* v = std::any_cast<std::string>(&val)) return nb::cast(*v);
+    return nb::none();
+}
+
+bool frame_has_user_data(const Frame& frame, const std::string& key) {
+    return frame.user_data.count(key) > 0;
 }
 
 }  // namespace
@@ -186,5 +220,11 @@ void bind_frame(nb::module_& m) {
         .def_rw("tracks", &Frame::tracks)
         .def("clear", &Frame::clear)
         .def("has_image", &Frame::has_image)
-        .def("image_numpy", &frame_image_numpy);
+        .def("image_numpy", &frame_image_numpy)
+        .def("set_user_data", &frame_set_user_data,
+             nb::arg("key"), nb::arg("value"))
+        .def("get_user_data", &frame_get_user_data,
+             nb::arg("key"))
+        .def("has_user_data", &frame_has_user_data,
+             nb::arg("key"));
 }

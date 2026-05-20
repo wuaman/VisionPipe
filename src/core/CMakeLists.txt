@@ -11,6 +11,7 @@ add_library(visionpipe_core STATIC
     infer_node.cpp
     source_node.cpp
     py_node.cpp
+    process_proxy_node.cpp
     # 源文件将在后续任务中添加
     # frame.cpp (header-only)
     # bounded_queue.cpp (header-only)

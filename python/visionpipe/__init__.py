@@ -4,6 +4,8 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
+from visionpipe.custom_node import CustomNode
+from visionpipe.frame_view import FrameView
 from visionpipe.py_node import PyNode
 
 __version__ = "0.1.0"
@@ -30,6 +32,7 @@ def _load_extension():
 
 _ext = _load_extension()
 
+ProcessProxyNode = _ext.ProcessProxyNode
 VisionPipeError = _ext.VisionPipeError
 ConfigError = _ext.ConfigError
 NotFoundError = _ext.NotFoundError
@@ -85,9 +88,10 @@ AnnotatorNode = _ext.AnnotatorNode
 
 
 def _unwrap_node(obj):
-    """Extract the C++ NodeBase from a PyNode wrapper or return as-is."""
+    """Extract the C++ NodeBase from a PyNode/CustomNode wrapper or return as-is."""
+    from visionpipe.custom_node import CustomNode as _CustomNodePy
     from visionpipe.py_node import PyNode as _PyNodePy
-    if isinstance(obj, _PyNodePy):
+    if isinstance(obj, (_PyNodePy, _CustomNodePy)):
         return obj._cpp_node
     return obj
 
@@ -153,6 +157,9 @@ _attach_to_pipeline()
 
 __all__ = [
     "__version__",
+    "CustomNode",
+    "FrameView",
+    "ProcessProxyNode",
     "PyNode",
     "VisionPipeError",
     "ConfigError",

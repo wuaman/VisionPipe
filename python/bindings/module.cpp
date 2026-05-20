@@ -12,5 +12,6 @@ NB_MODULE(visionpipe_python, m) {
     bind_frame(m);
     bind_nodes(m);
     bind_py_node(m);
+    bind_process_proxy_node(m);
     bind_pipeline(m);
 }

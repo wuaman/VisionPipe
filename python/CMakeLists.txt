@@ -7,6 +7,7 @@ set(VISIONPIPE_BINDING_SOURCES
     bindings/bind_frame.cpp
     bindings/bind_nodes.cpp
     bindings/bind_py_node.cpp
+    bindings/bind_process_proxy_node.cpp
     bindings/bind_pipeline.cpp
 )
 
