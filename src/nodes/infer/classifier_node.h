@@ -46,11 +46,12 @@ public:
     const ClassifierConfig& config() const { return config_; }
 
 protected:
-    void infer_frame(IExecContext& ctx, Frame& frame) override;
+    void process_batch(std::vector<Frame>& frames) override;
 
 private:
-    void infer_whole_image(IExecContext& ctx, Frame& frame);
-    void infer_crops(IExecContext& ctx, Frame& frame);
+    void infer_single_frame(Frame& frame);
+    void infer_whole_image(Frame& frame);
+    void infer_crops(Frame& frame);
 
     void preprocess_whole_image(Frame& frame, Tensor& input_tensor);
     void preprocess_crops(Frame& frame, Tensor& batch_tensor,

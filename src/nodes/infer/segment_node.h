@@ -57,7 +57,7 @@ public:
     const std::vector<std::vector<uint8_t>>& last_masks() const { return last_masks_; }
 
 protected:
-    void infer_frame(IExecContext& ctx, Frame& frame) override;
+    void process_batch(std::vector<Frame>& frames) override;
 
 private:
     LetterboxParams preprocess(Frame& frame, Tensor& input_tensor);

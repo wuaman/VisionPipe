@@ -28,7 +28,7 @@ CudaAllocator* get_cuda_allocator() {
 SegmentNode::SegmentNode(std::shared_ptr<IModelEngine> engine,
                          const SegmentConfig& config,
                          const std::string& name)
-    : InferNode(std::move(engine), config.workers, name)
+    : InferNode(std::move(engine), config.workers, 1, std::chrono::milliseconds(5), name)
     , config_(config) {}
 
 SegmentNode::SegmentNode(std::shared_ptr<IModelEngine> engine,
@@ -78,23 +78,25 @@ bool SegmentNode::set_param(const std::string& name, const ParamValue& value) {
     return false;
 }
 
-void SegmentNode::infer_frame(IExecContext& ctx, Frame& frame) {
-    Tensor input_tensor;
-    auto letterbox_params = preprocess(frame, input_tensor);
+void SegmentNode::process_batch(std::vector<Frame>& frames) {
+    for (auto& frame : frames) {
+        Tensor input_tensor;
+        auto letterbox_params = preprocess(frame, input_tensor);
 
-    int orig_width = frame.image.shape.size() >= 2
-        ? static_cast<int>(frame.image.shape[1]) : 640;
-    int orig_height = frame.image.shape.size() >= 2
-        ? static_cast<int>(frame.image.shape[0]) : 640;
+        int orig_width = frame.image.shape.size() >= 2
+            ? static_cast<int>(frame.image.shape[1]) : 640;
+        int orig_height = frame.image.shape.size() >= 2
+            ? static_cast<int>(frame.image.shape[0]) : 640;
 
-    std::vector<Tensor> outputs;
-    ctx.infer_multi(input_tensor, outputs);
+        std::vector<Tensor> outputs;
+        run_inference_multi(input_tensor, outputs);
 
-    if (outputs.size() < 2) {
-        throw InferError("SegmentNode expects 2 outputs from engine");
+        if (outputs.size() < 2) {
+            throw InferError("SegmentNode expects 2 outputs from engine");
+        }
+
+        postprocess(frame, outputs[0], outputs[1], letterbox_params, orig_width, orig_height);
     }
-
-    postprocess(frame, outputs[0], outputs[1], letterbox_params, orig_width, orig_height);
 }
 
 LetterboxParams SegmentNode::preprocess(Frame& frame, Tensor& input_tensor) {

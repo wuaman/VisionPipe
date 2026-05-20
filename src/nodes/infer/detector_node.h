@@ -38,9 +38,6 @@ public:
                           const DetectorConfig& config = DetectorConfig(),
                           const std::string& name = "detector");
 
-    /// @brief 简化构造函数
-    /// @param engine TensorRT 模型引擎
-    /// @param name 节点名称
     explicit DetectorNode(std::shared_ptr<IModelEngine> engine,
                           const std::string& name);
 
@@ -68,7 +65,7 @@ public:
     void clear_roi();
 
 protected:
-    void infer_frame(IExecContext& ctx, Frame& frame) override;
+    void process_batch(std::vector<Frame>& frames) override;
 
 private:
     /// @brief 预处理图像

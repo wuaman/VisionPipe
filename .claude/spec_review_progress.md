@@ -40,7 +40,7 @@ Next phase: (all phases confirmed)
 #### 代码验证结果
 - T2.1 HAL NVIDIA：匹配 ✓
 - T2.2a FileSource 继承：已修复 ✓ — FileSource/RtspSource 继承 SourceNode；SourceConfig 含 Phase 1 字段
-- InferNode batch 机制：**不匹配** — 当前为单帧 infer_frame 接口，无 process_batch
+- InferNode batch 机制：已修复 ✓ — 改为 process_batch(vector<Frame>&) + run_inference/run_inference_multi 辅助方法 + 动态攒帧（max_batch_size + batch_timeout）
 - Frame.classifications：已修复 ✓ — 新增 Classification 结构体 + classifications 向量（frame.h:40-44, 53）
 - ClassifierNode 双模式：已修复 ✓ — target_classes 非空=二级分类，空=整图分类；结果写入 frame.classifications
 - T2.2a 视频源节点：已修复 ✓ — FileSource GPU 解码填充 Frame::image（BGRA→RGB + CudaAllocator）；RtspSource CPU 解码填充 Frame::image；GPU 模式不支持时抛 CudaError
@@ -126,3 +126,4 @@ Next phase: (all phases confirmed)
 - 2026-05-15: Phase 3 确认，新增 CustomNode 子进程架构（3-D）和 DSL 重构（3-C），T3.1/T3.2/T3.3 全部标记为 [ ]
 - 2026-05-15: Phase 4 确认，关键决策：分离生命周期、通用控制通道、JsonResult 独立 WS、MjpegSink 默认关闭、SinkNode 基类统一 enabled、NodeStats 补齐 latency_ms+state。T4.1/T4.2/T4.3/T4.4 标记为 [ ]
 - 2026-05-19: Phase 5 确认，重新定位为「集成验证 + 收尾」。移除性能 benchmark（后续专项），新增 T5.2 端到端验证测试（三层递进），T2.2b ICodec HAL 移至未来扩展，T5.1 标记回 [ ]（测试资产路径需修复）
+- 2026-05-20: T2.3 补齐完成 — InferNode 从 infer_frame 重构为 process_batch 接口，DetectorNode/ClassifierNode/SegmentNode 全部适配，parallel_workers 测试恢复启用并通过

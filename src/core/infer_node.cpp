@@ -12,12 +12,18 @@ namespace {
 constexpr size_t kQueueCapacity = 1024;
 }
 
+thread_local IExecContext* InferNode::current_context_ = nullptr;
+
 InferNode::InferNode(std::shared_ptr<IModelEngine> engine,
                      size_t workers,
+                     size_t max_batch_size,
+                     std::chrono::milliseconds batch_timeout,
                      const std::string& name)
     : NodeBase(name)
     , engine_(std::move(engine))
     , workers_(workers == 0 ? 1 : workers)
+    , max_batch_size_(max_batch_size == 0 ? 1 : max_batch_size)
+    , batch_timeout_(batch_timeout)
     , owned_input_queue_(std::make_shared<BoundedQueue<Frame>>(kQueueCapacity, OverflowPolicy::BLOCK)) {
     if (!engine_) {
         throw ConfigError("InferNode requires a valid engine");
@@ -35,7 +41,12 @@ void InferNode::process(Frame& frame) {
     if (contexts_.empty()) {
         throw InferError("InferNode is not started");
     }
-    infer_frame(*contexts_.front(), frame);
+    current_context_ = contexts_.front().get();
+    std::vector<Frame> batch;
+    batch.push_back(std::move(frame));
+    process_batch(batch);
+    frame = std::move(batch[0]);
+    current_context_ = nullptr;
 }
 
 void InferNode::start() {
@@ -84,7 +95,7 @@ void InferNode::start() {
         worker_threads_.emplace_back(&InferNode::worker_loop, this, i);
     }
 
-    VP_LOG_INFO("InferNode '{}' started with {} worker(s)", name_, workers_);
+    VP_LOG_INFO("InferNode '{}' started with {} worker(s), max_batch_size={}", name_, workers_, max_batch_size_);
 }
 
 void InferNode::stop(bool drain) {
@@ -122,8 +133,22 @@ void InferNode::wait_stop() {
     contexts_.clear();
 }
 
+void InferNode::run_inference(const Tensor& input, Tensor& output) {
+    if (!current_context_) {
+        throw InferError("run_inference called outside worker context");
+    }
+    current_context_->infer(input, output);
+}
+
+void InferNode::run_inference_multi(const Tensor& input, std::vector<Tensor>& outputs) {
+    if (!current_context_) {
+        throw InferError("run_inference_multi called outside worker context");
+    }
+    current_context_->infer_multi(input, outputs);
+}
+
 void InferNode::worker_loop(size_t worker_index) {
-    auto& context = contexts_.at(worker_index);
+    current_context_ = contexts_.at(worker_index).get();
 
     while (!should_worker_exit()) {
         auto frame_opt = input_queue_->pop_for(std::chrono::milliseconds(100));
@@ -134,23 +159,40 @@ void InferNode::worker_loop(size_t worker_index) {
             continue;
         }
 
-        Frame frame = std::move(*frame_opt);
-        in_flight_frames_.fetch_add(1, std::memory_order_relaxed);
+        std::vector<Frame> batch;
+        batch.push_back(std::move(*frame_opt));
+
+        if (max_batch_size_ > 1) {
+            auto batch_start = std::chrono::steady_clock::now();
+            while (batch.size() < max_batch_size_) {
+                auto elapsed = std::chrono::steady_clock::now() - batch_start;
+                if (elapsed >= batch_timeout_) break;
+                auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    batch_timeout_ - elapsed);
+                if (remaining.count() <= 0) break;
+                auto next = input_queue_->pop_for(remaining);
+                if (!next.has_value()) break;
+                batch.push_back(std::move(*next));
+            }
+        }
+
+        size_t batch_size = batch.size();
+        in_flight_frames_.fetch_add(batch_size, std::memory_order_relaxed);
         {
             std::lock_guard<std::mutex> lock(reorder_mutex_);
             if (!next_output_initialized_) {
-                next_output_frame_id_ = frame.frame_id;
+                next_output_frame_id_ = batch[0].frame_id;
                 next_output_initialized_ = true;
             }
         }
 
         try {
-            infer_frame(*context, frame);
-            ++processed_count_;
+            process_batch(batch);
+            processed_count_ += batch_size;
 
             const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
             std::lock_guard<std::mutex> fps_lock(fps_mutex_);
-            ++frames_since_last_fps_;
+            frames_since_last_fps_ += batch_size;
             if (last_frame_time_ == 0) {
                 last_frame_time_ = now;
             }
@@ -165,19 +207,25 @@ void InferNode::worker_loop(size_t worker_index) {
                 frames_since_last_fps_ = 0;
             }
         } catch (const std::exception& error) {
-            ++error_count_;
-            in_flight_frames_.fetch_sub(1, std::memory_order_relaxed);
-            on_error(frame, error.what());
+            error_count_ += batch_size;
+            in_flight_frames_.fetch_sub(batch_size, std::memory_order_relaxed);
+            for (auto& f : batch) {
+                on_error(f, error.what());
+            }
             continue;
         }
 
         {
             std::lock_guard<std::mutex> lock(reorder_mutex_);
-            pending_outputs_.emplace(frame.frame_id, std::move(frame));
+            for (auto& f : batch) {
+                pending_outputs_.emplace(f.frame_id, std::move(f));
+            }
             emit_ready_frames_locked();
         }
-        in_flight_frames_.fetch_sub(1, std::memory_order_relaxed);
+        in_flight_frames_.fetch_sub(batch_size, std::memory_order_relaxed);
     }
+
+    current_context_ = nullptr;
 
     {
         std::lock_guard<std::mutex> lock(reorder_mutex_);

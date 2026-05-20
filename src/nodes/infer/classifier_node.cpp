@@ -80,7 +80,7 @@ int argmax_softmax(const float* logits, int num_classes, float& out_prob) {
 ClassifierNode::ClassifierNode(std::shared_ptr<IModelEngine> engine,
                                const ClassifierConfig& config,
                                const std::string& name)
-    : InferNode(std::move(engine), config.workers, name)
+    : InferNode(std::move(engine), config.workers, 1, std::chrono::milliseconds(5), name)
     , config_(config) {}
 
 ClassifierNode::ClassifierNode(std::shared_ptr<IModelEngine> engine,
@@ -108,16 +108,21 @@ void ClassifierNode::get_image_dims(const Frame& frame, int& width, int& height)
     }
 }
 
-void ClassifierNode::infer_frame(IExecContext& ctx, Frame& frame) {
-    if (config_.target_classes.empty()) {
-        infer_whole_image(ctx, frame);
-    } else {
-        infer_crops(ctx, frame);
+void ClassifierNode::process_batch(std::vector<Frame>& frames) {
+    for (auto& frame : frames) {
+        infer_single_frame(frame);
     }
 }
 
-// Mode 2: whole-image classification
-void ClassifierNode::infer_whole_image(IExecContext& ctx, Frame& frame) {
+void ClassifierNode::infer_single_frame(Frame& frame) {
+    if (config_.target_classes.empty()) {
+        infer_whole_image(frame);
+    } else {
+        infer_crops(frame);
+    }
+}
+
+void ClassifierNode::infer_whole_image(Frame& frame) {
     if (!frame.has_image()) {
         throw InferError("Frame has no image data");
     }
@@ -126,13 +131,12 @@ void ClassifierNode::infer_whole_image(IExecContext& ctx, Frame& frame) {
     preprocess_whole_image(frame, input_tensor);
 
     Tensor output;
-    ctx.infer(input_tensor, output);
+    run_inference(input_tensor, output);
 
     postprocess_whole_image(frame, output);
 }
 
-// Mode 1: crop-based secondary classification
-void ClassifierNode::infer_crops(IExecContext& ctx, Frame& frame) {
+void ClassifierNode::infer_crops(Frame& frame) {
     if (frame.detections.empty()) {
         return;
     }
@@ -150,7 +154,7 @@ void ClassifierNode::infer_crops(IExecContext& ctx, Frame& frame) {
     }
 
     Tensor output;
-    ctx.infer(batch_tensor, output);
+    run_inference(batch_tensor, output);
 
     postprocess_crops(frame, output, valid_det_indices);
 }

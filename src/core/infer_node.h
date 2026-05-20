@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -16,12 +17,14 @@ namespace visionpipe {
 
 /// @brief 推理节点基类
 ///
-/// 提供并行 worker 线程管理、帧重排序、drain 传播等通用推理基础设施。
-/// 子类只需实现 infer_frame()，将 pre+infer+post 逻辑封装在其中。
+/// 提供并行 worker 线程管理、动态攒帧、帧重排序、drain 传播等通用推理基础设施。
+/// 子类实现 process_batch()，在其中调用 run_inference() 执行推理。
 class InferNode : public NodeBase {
 public:
     explicit InferNode(std::shared_ptr<IModelEngine> engine,
                        size_t workers = 1,
+                       size_t max_batch_size = 1,
+                       std::chrono::milliseconds batch_timeout = std::chrono::milliseconds(5),
                        const std::string& name = "infer");
     ~InferNode() override;
 
@@ -31,16 +34,25 @@ public:
     void wait_stop() override;
 
     size_t worker_count() const { return workers_; }
+    size_t max_batch_size() const { return max_batch_size_; }
 
 protected:
-    /// @brief 每帧推理入口，由 worker 线程调用
+    /// @brief 批量推理入口，由 worker 线程调用
     ///
-    /// 子类在此方法中执行完整的 preprocess → infer → postprocess 流程。
-    /// 抛出异常时，InferNode 会增加 error_count_ 并记录日志，帧被丢弃。
-    virtual void infer_frame(IExecContext& ctx, Frame& frame) = 0;
+    /// 子类在此方法中对批量帧执行 preprocess → infer → postprocess 流程。
+    /// 可调用 run_inference() / run_inference_multi() 执行模型推理。
+    virtual void process_batch(std::vector<Frame>& frames) = 0;
+
+    /// @brief 单输出推理辅助方法（使用当前 worker 的 IExecContext）
+    void run_inference(const Tensor& input, Tensor& output);
+
+    /// @brief 多输出推理辅助方法（使用当前 worker 的 IExecContext）
+    void run_inference_multi(const Tensor& input, std::vector<Tensor>& outputs);
 
     std::shared_ptr<IModelEngine> engine_;
     size_t workers_;
+    size_t max_batch_size_;
+    std::chrono::milliseconds batch_timeout_;
     std::vector<std::unique_ptr<IExecContext>> contexts_;
 
 private:
@@ -55,6 +67,8 @@ private:
     int64_t next_output_frame_id_ = 0;
     bool next_output_initialized_ = false;
     std::atomic<size_t> in_flight_frames_{0};
+
+    static thread_local IExecContext* current_context_;
 };
 
 }  // namespace visionpipe

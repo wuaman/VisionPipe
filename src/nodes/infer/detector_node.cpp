@@ -28,7 +28,7 @@ CudaAllocator* get_cuda_allocator() {
 DetectorNode::DetectorNode(std::shared_ptr<IModelEngine> engine,
                            const DetectorConfig& config,
                            const std::string& name)
-    : InferNode(std::move(engine), config.workers, name)
+    : InferNode(std::move(engine), config.workers, 1, std::chrono::milliseconds(5), name)
     , config_(config) {}
 
 DetectorNode::DetectorNode(std::shared_ptr<IModelEngine> engine,
@@ -104,19 +104,21 @@ void DetectorNode::clear_roi() {
     roi_polygons_.clear();
 }
 
-void DetectorNode::infer_frame(IExecContext& ctx, Frame& frame) {
-    Tensor input_tensor;
-    auto letterbox_params = preprocess(frame, input_tensor);
+void DetectorNode::process_batch(std::vector<Frame>& frames) {
+    for (auto& frame : frames) {
+        Tensor input_tensor;
+        auto letterbox_params = preprocess(frame, input_tensor);
 
-    int orig_width = frame.image.shape.size() >= 2
-        ? static_cast<int>(frame.image.shape[1]) : 640;
-    int orig_height = frame.image.shape.size() >= 2
-        ? static_cast<int>(frame.image.shape[0]) : 640;
+        int orig_width = frame.image.shape.size() >= 2
+            ? static_cast<int>(frame.image.shape[1]) : 640;
+        int orig_height = frame.image.shape.size() >= 2
+            ? static_cast<int>(frame.image.shape[0]) : 640;
 
-    Tensor output;
-    ctx.infer(input_tensor, output);
+        Tensor output;
+        run_inference(input_tensor, output);
 
-    postprocess(frame, output, letterbox_params, orig_width, orig_height);
+        postprocess(frame, output, letterbox_params, orig_width, orig_height);
+    }
 }
 
 LetterboxParams DetectorNode::preprocess(Frame& frame, Tensor& input_tensor) {
