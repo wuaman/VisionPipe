@@ -484,3 +484,510 @@ class TestDefaultValues:
         assert spec.default_queue_capacity == 64
         assert spec.default_overflow_policy == "BLOCK"
         assert spec.id == "id-123"
+
+
+# ---------------------------------------------------------------------------
+# T3.3 新增：CustomNode YAML 支持测试
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# 11. NodeSpec custom_node 正常路径
+# ---------------------------------------------------------------------------
+
+
+class TestNodeSpecCustomNodeNormalPath:
+    """custom_node 类型 NodeSpec 在 module/class_name/process_mode 合法时可正常创建。"""
+
+    def test_custom_node_subprocess_mode(self) -> None:
+        spec = NodeSpec(
+            name="my_custom",
+            type="custom_node",
+            params={"threshold": 0.5},
+            module="my_pkg.my_mod",
+            class_name="MyCustomNode",
+            process_mode="subprocess",
+        )
+        assert spec.name == "my_custom"
+        assert spec.type == "custom_node"
+        assert spec.params == {"threshold": 0.5}
+        assert spec.module == "my_pkg.my_mod"
+        assert spec.class_name == "MyCustomNode"
+        assert spec.process_mode == "subprocess"
+
+    def test_custom_node_inline_mode(self) -> None:
+        spec = NodeSpec(
+            name="my_inline",
+            type="custom_node",
+            params={"a": 1, "b": "text"},
+            module="some.module",
+            class_name="InlineNode",
+            process_mode="inline",
+        )
+        assert spec.process_mode == "inline"
+        assert spec.module == "some.module"
+        assert spec.class_name == "InlineNode"
+
+    def test_custom_node_with_nested_params(self) -> None:
+        params = {"cfg": {"a": [1, 2, 3], "b": True}, "name": "x"}
+        spec = NodeSpec(
+            name="nested",
+            type="custom_node",
+            params=params,
+            module="pkg.mod",
+            class_name="Cls",
+            process_mode="subprocess",
+        )
+        assert spec.params == params
+
+
+# ---------------------------------------------------------------------------
+# 12. NodeSpec custom_node 边界值
+# ---------------------------------------------------------------------------
+
+
+class TestNodeSpecCustomNodeBoundary:
+    """边界：process_mode=None（使用默认）、params 为空。"""
+
+    def test_custom_node_process_mode_none(self) -> None:
+        spec = NodeSpec(
+            name="default_mode",
+            type="custom_node",
+            module="pkg.mod",
+            class_name="Cls",
+        )
+        assert spec.process_mode is None
+
+    def test_custom_node_empty_params(self) -> None:
+        spec = NodeSpec(
+            name="empty_params",
+            type="custom_node",
+            params={},
+            module="pkg.mod",
+            class_name="Cls",
+        )
+        assert spec.params == {}
+
+    def test_custom_node_default_params(self) -> None:
+        """未传 params 时使用默认空 dict。"""
+        spec = NodeSpec(
+            name="no_params",
+            type="custom_node",
+            module="pkg.mod",
+            class_name="Cls",
+        )
+        assert spec.params == {}
+
+
+# ---------------------------------------------------------------------------
+# 13. NodeSpec custom_node 错误路径
+# ---------------------------------------------------------------------------
+
+
+class TestNodeSpecCustomNodeErrorPath:
+    """custom_node 缺少必填字段或字段非法时抛 ValidationError。"""
+
+    def test_missing_module_raises(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            NodeSpec(
+                name="bad",
+                type="custom_node",
+                class_name="Cls",
+            )
+        assert "module" in str(exc_info.value)
+
+    def test_missing_class_name_raises(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            NodeSpec(
+                name="bad",
+                type="custom_node",
+                module="pkg.mod",
+            )
+        assert "class_name" in str(exc_info.value)
+
+    def test_missing_both_module_and_class_name_raises(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            NodeSpec(name="bad", type="custom_node")
+        msg = str(exc_info.value)
+        assert "module" in msg and "class_name" in msg
+
+    def test_empty_string_module_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            NodeSpec(
+                name="bad",
+                type="custom_node",
+                module="",
+                class_name="Cls",
+            )
+
+    def test_empty_string_class_name_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            NodeSpec(
+                name="bad",
+                type="custom_node",
+                module="pkg.mod",
+                class_name="",
+            )
+
+    @pytest.mark.parametrize(
+        "bad_mode",
+        ["thread", "async", "SUBPROCESS", "INLINE", "fork", "process"],
+    )
+    def test_invalid_process_mode_raises(self, bad_mode: str) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            NodeSpec(
+                name="bad",
+                type="custom_node",
+                module="pkg.mod",
+                class_name="Cls",
+                process_mode=bad_mode,
+            )
+        assert "process_mode" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# 14. annotator 类型是合法 NodeType
+# ---------------------------------------------------------------------------
+
+
+class TestAnnotatorNodeType:
+    """annotator 是合法 NodeType，普通节点不要求 module/class_name。"""
+
+    def test_annotator_valid_type(self) -> None:
+        spec = NodeSpec(name="anno", type="annotator", params={"draw_detections": True})
+        assert spec.type == "annotator"
+        assert spec.params == {"draw_detections": True}
+
+    def test_annotator_no_params(self) -> None:
+        spec = NodeSpec(name="anno", type="annotator")
+        assert spec.type == "annotator"
+        assert spec.params == {}
+        assert spec.module is None
+        assert spec.class_name is None
+        assert spec.process_mode is None
+
+
+# ---------------------------------------------------------------------------
+# 15. YAML round-trip with custom_node
+# ---------------------------------------------------------------------------
+
+
+class TestYamlRoundTripCustomNode:
+    """含 custom_node 的 PipelineSpec model_dump → yaml → model_validate 往返一致。"""
+
+    def test_round_trip_custom_node(self) -> None:
+        original = PipelineSpec(
+            name="cn_pipe",
+            id="cn-001",
+            nodes=[
+                NodeSpec(name="src", type="file_source", params={"uri": "v.mp4"}),
+                NodeSpec(
+                    name="cn",
+                    type="custom_node",
+                    params={"threshold": 0.7, "label": "x"},
+                    module="my_pkg.cn",
+                    class_name="MyCN",
+                    process_mode="subprocess",
+                ),
+            ],
+            edges=[EdgeSpec(from_node="src", to_node="cn")],
+        )
+
+        data = original.model_dump()
+        yaml_str = yaml.dump(data, allow_unicode=True, sort_keys=False)
+        loaded_data = yaml.safe_load(yaml_str)
+        restored = PipelineSpec.model_validate(loaded_data)
+
+        assert restored == original
+        assert restored.nodes[1].module == "my_pkg.cn"
+        assert restored.nodes[1].class_name == "MyCN"
+        assert restored.nodes[1].process_mode == "subprocess"
+
+    def test_round_trip_custom_node_inline(self) -> None:
+        original = PipelineSpec(
+            name="cn_inline",
+            nodes=[
+                NodeSpec(
+                    name="cn",
+                    type="custom_node",
+                    params={},
+                    module="pkg.mod",
+                    class_name="Cls",
+                    process_mode="inline",
+                ),
+            ],
+        )
+        data = original.model_dump()
+        yaml_str = yaml.dump(data, allow_unicode=True, sort_keys=False)
+        restored = PipelineSpec.model_validate(yaml.safe_load(yaml_str))
+        assert restored == original
+        assert restored.nodes[0].process_mode == "inline"
+
+    def test_round_trip_custom_node_default_process_mode(self) -> None:
+        """process_mode 未设置时往返保持 None。"""
+        original = PipelineSpec(
+            name="cn_def",
+            nodes=[
+                NodeSpec(
+                    name="cn",
+                    type="custom_node",
+                    module="pkg.mod",
+                    class_name="Cls",
+                ),
+            ],
+        )
+        data = original.model_dump()
+        yaml_str = yaml.dump(data, allow_unicode=True, sort_keys=False)
+        restored = PipelineSpec.model_validate(yaml.safe_load(yaml_str))
+        assert restored == original
+        assert restored.nodes[0].process_mode is None
+
+
+# ---------------------------------------------------------------------------
+# 16. load_yaml with custom_node
+# ---------------------------------------------------------------------------
+
+
+class TestLoadYamlCustomNode:
+    """写含 custom_node 的 YAML 文件，load_yaml 返回正确的 PipelineSpec。"""
+
+    def test_load_yaml_with_custom_node(self, tmp_path: Path) -> None:
+        yaml_content = {
+            "name": "cn_load",
+            "id": "cn-load-001",
+            "nodes": [
+                {"name": "src", "type": "file_source", "params": {"uri": "v.mp4"}},
+                {
+                    "name": "cn",
+                    "type": "custom_node",
+                    "params": {"k": 1},
+                    "module": "my_pkg.my_mod",
+                    "class_name": "MyClass",
+                    "process_mode": "subprocess",
+                },
+            ],
+            "edges": [{"from_node": "src", "to_node": "cn"}],
+        }
+        yaml_file = tmp_path / "cn.yaml"
+        yaml_file.write_text(yaml.dump(yaml_content, allow_unicode=True, sort_keys=False))
+
+        spec = load_yaml(yaml_file)
+
+        assert spec.name == "cn_load"
+        assert len(spec.nodes) == 2
+        cn_spec = spec.nodes[1]
+        assert cn_spec.name == "cn"
+        assert cn_spec.type == "custom_node"
+        assert cn_spec.params == {"k": 1}
+        assert cn_spec.module == "my_pkg.my_mod"
+        assert cn_spec.class_name == "MyClass"
+        assert cn_spec.process_mode == "subprocess"
+
+    def test_load_yaml_custom_node_missing_module_fails(self, tmp_path: Path) -> None:
+        yaml_content = {
+            "name": "bad_cn",
+            "nodes": [
+                {
+                    "name": "cn",
+                    "type": "custom_node",
+                    "params": {},
+                    "class_name": "MyClass",
+                },
+            ],
+        }
+        yaml_file = tmp_path / "bad_cn.yaml"
+        yaml_file.write_text(yaml.dump(yaml_content))
+
+        with pytest.raises(ValidationError) as exc_info:
+            load_yaml(yaml_file)
+        assert "module" in str(exc_info.value)
+
+    def test_load_yaml_custom_node_invalid_process_mode_fails(self, tmp_path: Path) -> None:
+        yaml_content = {
+            "name": "bad_cn",
+            "nodes": [
+                {
+                    "name": "cn",
+                    "type": "custom_node",
+                    "module": "pkg.mod",
+                    "class_name": "Cls",
+                    "process_mode": "thread",
+                },
+            ],
+        }
+        yaml_file = tmp_path / "bad_mode.yaml"
+        yaml_file.write_text(yaml.dump(yaml_content))
+
+        with pytest.raises(ValidationError) as exc_info:
+            load_yaml(yaml_file)
+        assert "process_mode" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# 17. _import_custom_node 正常/错误路径
+# ---------------------------------------------------------------------------
+
+
+# 模块级 stub：用于 _import_custom_node 测试
+# 注意：此模块路径必须可通过 importlib 解析到本测试模块
+class _StubCustomNode:
+    """测试用 CustomNode 替身——绕过 C++ 节点构建。
+
+    _import_custom_node 调用 cls(name=..., process_mode=..., **params)，
+    本类直接接收这些参数并记录，不构建任何 C++ 资源。
+    """
+
+    def __init__(
+        self,
+        name: str = "stub",
+        process_mode: str = "subprocess",
+        **kwargs,
+    ) -> None:
+        self.name = name
+        self.process_mode = process_mode
+        self.kwargs = kwargs
+
+
+class _StubWithExtra(_StubCustomNode):
+    """另一个 stub，验证类名解析正确。"""
+
+    def __init__(self, name: str = "x", process_mode: str = "subprocess", **kwargs) -> None:
+        super().__init__(name=name, process_mode=process_mode, **kwargs)
+        self.extra = kwargs.get("extra_value")
+
+
+class TestImportCustomNodeNormalPath:
+    """_import_custom_node 可从 module/class_name 自动导入并实例化。"""
+
+    def test_import_and_instantiate(self) -> None:
+        from visionpipe.serialization import _import_custom_node
+
+        spec = NodeSpec(
+            name="stub_node",
+            type="custom_node",
+            params={"threshold": 0.5, "label": "cat"},
+            module=__name__,
+            class_name="_StubCustomNode",
+            process_mode="inline",
+        )
+        instance = _import_custom_node(spec)
+
+        assert isinstance(instance, _StubCustomNode)
+        assert instance.name == "stub_node"
+        assert instance.process_mode == "inline"
+        assert instance.kwargs == {"threshold": 0.5, "label": "cat"}
+
+    def test_import_default_process_mode_subprocess(self) -> None:
+        """spec.process_mode 为 None 时，传给构造函数的应为 'subprocess'。"""
+        from visionpipe.serialization import _import_custom_node
+
+        spec = NodeSpec(
+            name="default_mode",
+            type="custom_node",
+            params={},
+            module=__name__,
+            class_name="_StubCustomNode",
+        )
+        instance = _import_custom_node(spec)
+
+        assert instance.process_mode == "subprocess"
+        assert instance.kwargs == {}
+
+    def test_import_different_class(self) -> None:
+        """class_name 解析必须命中对应类。"""
+        from visionpipe.serialization import _import_custom_node
+
+        spec = NodeSpec(
+            name="extra_node",
+            type="custom_node",
+            params={"extra_value": 42},
+            module=__name__,
+            class_name="_StubWithExtra",
+            process_mode="subprocess",
+        )
+        instance = _import_custom_node(spec)
+
+        assert isinstance(instance, _StubWithExtra)
+        assert instance.extra == 42
+
+
+class TestImportCustomNodeErrorPath:
+    """_import_custom_node 错误路径：module/class 不存在。"""
+
+    def test_module_not_found_raises_import_error(self) -> None:
+        from visionpipe.serialization import _import_custom_node
+
+        spec = NodeSpec(
+            name="bad",
+            type="custom_node",
+            module="this_module_definitely_does_not_exist_xyz_123",
+            class_name="WhateverClass",
+        )
+        with pytest.raises(ImportError):
+            _import_custom_node(spec)
+
+    def test_class_not_found_in_module_raises_attribute_error(self) -> None:
+        from visionpipe.serialization import _import_custom_node
+
+        spec = NodeSpec(
+            name="bad",
+            type="custom_node",
+            module=__name__,
+            class_name="NonExistentClassName_xyz",
+        )
+        with pytest.raises(AttributeError):
+            _import_custom_node(spec)
+
+
+# ---------------------------------------------------------------------------
+# 18. 非 custom_node 类型不要求 module/class_name
+# ---------------------------------------------------------------------------
+
+
+class TestNonCustomNodeTypeNoExtraFields:
+    """非 custom_node 类型不要求 module/class_name，且默认为 None。"""
+
+    def test_file_source_no_module(self) -> None:
+        spec = NodeSpec(name="src", type="file_source", module=None)
+        assert spec.module is None
+        assert spec.class_name is None
+        assert spec.type == "file_source"
+
+    def test_detector_module_none(self) -> None:
+        spec = NodeSpec(name="det", type="detector")
+        assert spec.module is None
+        assert spec.class_name is None
+        assert spec.process_mode is None
+
+    def test_non_custom_node_with_module_set_is_allowed(self) -> None:
+        """非 custom_node 类型即便额外指定了 module/class_name 也不报错（字段是可选的）。"""
+        spec = NodeSpec(
+            name="src",
+            type="file_source",
+            module="ignored.module",
+            class_name="IgnoredClass",
+        )
+        assert spec.type == "file_source"
+        assert spec.module == "ignored.module"
+        assert spec.class_name == "IgnoredClass"
+
+    @pytest.mark.parametrize(
+        "node_type",
+        [
+            "file_source",
+            "rtsp_source",
+            "detector",
+            "classifier",
+            "segment",
+            "bytetrack",
+            "annotator",
+            "py_node",
+            "json_result_sink",
+            "mjpeg_sink",
+            "webrtc_sink",
+        ],
+    )
+    def test_all_non_custom_types_without_module(self, node_type: str) -> None:
+        spec = NodeSpec(name=f"n_{node_type}", type=node_type)
+        assert spec.module is None
+        assert spec.class_name is None

@@ -1008,7 +1008,7 @@
 | T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 |
 | T3.1 | nanobind 绑定核心类 + DSL 重构 | P3 | P0 | [x] | T2.3、T2.4 | |
 | T3.2 | CustomNode 子进程架构 | P3 | P0 | [x] | T3.1 | |
-| T3.3 | YAML 导出/导入 + CustomNode 支持 | P3 | P1 | [ ] | T3.1 | 需要：CustomNode 序列化（module/class 自动导入） |
+| T3.3 | YAML 导出/导入 + CustomNode 支持 | P3 | P1 | [x] | T3.1 | |
 | T4.1 | 内嵌管理 REST API | P4 | P0 | [ ] | T3.1 | 需要：分离生命周期（create/start/stop/delete）+ 新增 GET /nodes 接口 + NodeStats 补齐 latency_ms/state |
 | T4.2 | WebRTC Sink | P4 | P0 | [ ] | T3.1 | 需要：继承 SinkNode（非 NodeBase） |
 | T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [ ] | T4.1、T4.2 | 需要：通用 set_param 消息转发（不仅 ROI） |

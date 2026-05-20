@@ -59,7 +59,7 @@ Next phase: (all phases confirmed)
 - 合并语法 `[src1, src2] >> det`：已修复 ✓ — NodeBase.__rrshift__ 处理 list/tuple 合并拓扑
 - `run(block=False)` API：已修复 ✓ — run(block=False) 非阻塞，run(block=True) 阻塞至 source 结束
 - CustomNode / ProcessProxyNode / FrameView：已修复 ✓ — ProcessProxyNode(C++ UDS IPC) + CustomNode(subprocess/inline) + FrameView(安全视图) + IPC protocol + worker
-- YAML CustomNode 自动导入：**不匹配** — 不支持
+- YAML CustomNode 自动导入：已修复 ✓ — NodeSpec 新增 module/class_name/process_mode 字段，_import_custom_node 自动导入，from_yaml 构建 Pipeline
 - T3.1/T3.2/T3.3 全部标记为未完成
 
 ### Phase 4: 管理 API + 前端交付（已确认）

@@ -98,6 +98,15 @@ class CustomNode:
     def teardown(self) -> None:
         """Called once in the subprocess after the last ``on_frame``."""
 
+    def get_config(self) -> dict[str, Any]:
+        """Return serializable config params for YAML export.
+
+        Override in subclasses to persist custom constructor arguments.
+        The returned dict is stored in the YAML ``params`` field and passed
+        back as keyword arguments when loading from YAML.
+        """
+        return dict(self._init_kwargs)
+
     # ------------------------------------------------------------------ #
     #  Internal: node construction
     # ------------------------------------------------------------------ #
