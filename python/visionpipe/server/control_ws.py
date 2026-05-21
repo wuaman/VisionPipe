@@ -4,6 +4,7 @@ Protocol (JSON messages from client)
 -------------------------------------
 ROI update:  {"type": "roi", "polygons": [[x,y], ...], "coord": "normalized"}
 ROI clear:   {"type": "roi_clear"}
+Set param:   {"type": "set_param", "node_id": "...", "param_name": "...", "value": <any>}
 Ping:        {"type": "ping"}
 
 Server responses
@@ -14,6 +15,11 @@ Server responses
 
 ROI polygons are lists of [x, y] normalized point pairs (values in [0, 1]).
 At least 3 points are required to form a valid polygon.
+
+set_param forwards the value to the target node's ``set_param(name, value)``.
+Supported value types follow the C++ ``ParamValue`` variant: int, float,
+str, and list[float]. The node decides whether the parameter is accepted;
+rejection yields an ``error`` response rather than ``ack``.
 """
 
 from __future__ import annotations
@@ -84,6 +90,8 @@ async def _dispatch(ws: web.WebSocketResponse, pipeline: Any, data: dict[str, An
         await _handle_roi(ws, pipeline, data)
     elif msg_type == "roi_clear":
         await _handle_roi_clear(ws, pipeline)
+    elif msg_type == "set_param":
+        await _handle_set_param(ws, pipeline, data)
     else:
         await ws.send_str(json.dumps({"type": "error", "message": f"Unknown message type: {msg_type!r}"}))
 
@@ -128,3 +136,55 @@ async def _handle_roi_clear(ws: web.WebSocketResponse, pipeline: Any) -> None:
     detector.clear_roi()
     await ws.send_str(json.dumps({"type": "ack", "ref_type": "roi_clear"}))
     logger.debug("ROI cleared")
+
+
+async def _handle_set_param(ws: web.WebSocketResponse, pipeline: Any, data: dict[str, Any]) -> None:
+    node_id = data.get("node_id")
+    param_name = data.get("param_name")
+    if not isinstance(node_id, str) or not node_id:
+        await ws.send_str(json.dumps({
+            "type": "error",
+            "message": "set_param requires a non-empty string 'node_id'",
+        }))
+        return
+    if not isinstance(param_name, str) or not param_name:
+        await ws.send_str(json.dumps({
+            "type": "error",
+            "message": "set_param requires a non-empty string 'param_name'",
+        }))
+        return
+    if "value" not in data:
+        await ws.send_str(json.dumps({
+            "type": "error",
+            "message": "set_param requires a 'value' field",
+        }))
+        return
+
+    value = data["value"]
+    nodes = pipeline.nodes()
+    node = nodes.get(node_id) if hasattr(nodes, "get") else None
+    if node is None:
+        await ws.send_str(json.dumps({
+            "type": "error",
+            "message": f"Node '{node_id}' not found in pipeline",
+        }))
+        return
+
+    try:
+        ok = node.set_param(param_name, value)
+    except Exception as exc:
+        await ws.send_str(json.dumps({
+            "type": "error",
+            "message": f"set_param('{param_name}') raised: {exc}",
+        }))
+        return
+
+    if not ok:
+        await ws.send_str(json.dumps({
+            "type": "error",
+            "message": f"Node '{node_id}' rejected param '{param_name}'",
+        }))
+        return
+
+    await ws.send_str(json.dumps({"type": "ack", "ref_type": "set_param"}))
+    logger.debug("set_param node=%s name=%s ok", node_id, param_name)

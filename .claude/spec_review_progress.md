@@ -74,13 +74,13 @@ Next phase: (all phases confirmed)
 #### 代码验证结果
 - 管理 REST API (aiohttp)：已修复 ✓ — 分离生命周期（POST start/stop 独立端点）+ GET /nodes 接口已实现
 - WebRTC Sink (libdatachannel + NVENC)：匹配 ✓
-- WebSocket 控制通道：**部分匹配** — 只处理 ROI，未支持通用 set_param 转发
+- WebSocket 控制通道：已修复 ✓ — 新增 set_param 消息类型，转发到任意节点 `set_param(name, value)`，覆盖参数校验/节点查找/拒绝/异常路径
 - JsonResultSink：匹配 ✓（独立 BoundedQueue）
 - MjpegSink：已修复 ✓ — enabled 开关已通过 SinkNode 基类实现，默认 enabled=false
 - NodeStats：已修复 ✓ — latency_ms (EMA α=0.1) 和 state (NodeState 枚举) 已补齐
 - SinkNode 基类：已修复 ✓ — SinkNode : NodeBase 中间基类，统一 enabled 属性，三个 Sink 均已迁移
 - Pipeline 生命周期分离 (create/start/stop/destroy)：匹配 ✓
-- T4.1 已完成；T4.4 已完成；T4.2/T4.3 仍标记为未完成
+- T4.1 已完成；T4.4 已完成；T4.3 已完成；T4.2 仍标记为未完成
 
 ### Phase 5: 集成验证 + 收尾（已确认）
 - **Phase 5 重新定位** → 从"集成测试 + 性能调优"改为"集成验证 + 收尾"，聚焦功能正确性而非性能指标
@@ -129,3 +129,4 @@ Next phase: (all phases confirmed)
 - 2026-05-20: T2.3 补齐完成 — InferNode 从 infer_frame 重构为 process_batch 接口，DetectorNode/ClassifierNode/SegmentNode 全部适配，parallel_workers 测试恢复启用并通过
 - 2026-05-20: T3.1 补齐完成 — DSL 重构：>> 返回 Pipeline（非 PipelineBuilder）、合并语法 [src1,src2]>>det、run(block=False)/stop() API
 - 2026-05-20: T3.2 完成 — CustomNode 子进程架构：C++ ProcessProxyNode(UDS JSON IPC) + Python CustomNode(subprocess/inline 双模式) + FrameView 安全视图 + IPC protocol + worker + 崩溃自动重启
+- 2026-05-21: T4.3 补齐完成 — WebSocket 控制通道新增通用 set_param 消息类型，扁平格式 `{type, node_id, param_name, value}` 与 REST `/params` 一致；覆盖参数校验、节点查找、拒绝（返回 False）、异常路径；23 个新测试 + 18 个原有 ROI 测试全部通过
