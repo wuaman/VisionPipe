@@ -80,7 +80,7 @@ Next phase: (all phases confirmed)
 - NodeStats：已修复 ✓ — latency_ms (EMA α=0.1) 和 state (NodeState 枚举) 已补齐
 - SinkNode 基类：已修复 ✓ — SinkNode : NodeBase 中间基类，统一 enabled 属性，三个 Sink 均已迁移
 - Pipeline 生命周期分离 (create/start/stop/destroy)：匹配 ✓
-- T4.1 已完成；T4.4 已完成；T4.3 已完成；T4.2 仍标记为未完成
+- T4.1 已完成；T4.4 已完成；T4.3 已完成；T4.2 已完成 ✓
 
 ### Phase 5: 集成验证 + 收尾（已确认）
 - **Phase 5 重新定位** → 从"集成测试 + 性能调优"改为"集成验证 + 收尾"，聚焦功能正确性而非性能指标
