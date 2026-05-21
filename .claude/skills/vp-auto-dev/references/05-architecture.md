@@ -48,35 +48,41 @@
 
 **Python 层**
 
-| 模块 | 说明 |
-|---|---|
-| Pipeline DSL | 用户面向的编排接口。`pipe = Pipeline()` 创建管道，`src >> det >> biz` 用 `>>` 运算符连接节点构成 DAG，`pipe.run()` 启动执行 |
-| Business Nodes | 用户继承 `PyNode` 基类编写的自定义业务逻辑节点（如告警判定、数据落库）。`process(frame)` 方法在 C++ 回调时短暂 acquire GIL 执行 |
-| Management API | aiohttp 协程服务，暴露 REST 接口（创建/启动/停止/销毁 pipeline、参数热更、健康检查），是运维和前端的对接入口 |
+
+| 模块             | 说明                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| Pipeline DSL   | 用户面向的编排接口。`pipe = Pipeline()` 创建管道，`src >> det >> biz` 用 `>>` 运算符连接节点构成 DAG，`pipe.run()` 启动执行 |
+| Business Nodes | 用户继承 `PyNode` 基类编写的自定义业务逻辑节点（如告警判定、数据落库）。`process(frame)` 方法在 C++ 回调时短暂 acquire GIL 执行        |
+| Management API | aiohttp 协程服务，暴露 REST 接口（创建/启动/停止/销毁 pipeline、参数热更、健康检查），是运维和前端的对接入口                           |
+
 
 **nanobind 绑定层**
 
-C++ 对象到 Python 的桥梁。将 Pipeline、Frame、Detection、各 Node 类型暴露为 Python 类，处理 GIL acquire/release，异常从 C++ 穿透到 Python（`VisionPipeError` → `visionpipe.VisionPipeError`）。
+C++对象到 Python 的桥梁。将 Pipeline、Frame、Detection、各 Node 类型暴露为 Python 类，处理 GIL acquire/release，异常从 C++ 穿透到 Python（`VisionPipeError` → `visionpipe.VisionPipeError`）。
 
 **C++ 核心层**
 
-| 模块 | 说明 |
-|---|---|
-| PipelineManager | 全局管理器，持有所有 pipeline 实例。负责 create/start/stop/destroy 生命周期管理，支持同进程多 pipeline 并行 |
-| ModelRegistry | 模型引擎池。按 engine 文件 SHA-256 去重，多 pipeline 共享同一 `IModelEngine` 实例（节省显存）。引用计数 + TTL 过期清理 |
-| ControlChannel | 控制通道。WebSocket 接收实时参数（ROI 坐标、阈值），通过 `set_param()` 原子写入节点；REST 路径处理 pipeline CRUD |
-| Pipeline (DAG) | 单条 pipeline 的执行引擎。维护节点有向无环图，节点间通过 `BoundedQueue` 连接，异步生产者-消费者模式驱动数据流 |
-| SourceNode | 视频源节点（`FileSource` / `RtspSource`）。通过 `DecodeMode` 配置选择 GPU 硬解码（`cv::cudacodec`）或 CPU 软解码（`cv::VideoCapture`） |
-| InferNode | 推理节点。持有 `IModelEngine` 的多个 `IExecContext`（`parallel_workers=N`），每个 worker 独立 CUDA stream 并行推理，输出按 frame_id 重排序保证有序 |
+
+| 模块              | 说明                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| PipelineManager | 全局管理器，持有所有 pipeline 实例。负责 create/start/stop/destroy 生命周期管理，支持同进程多 pipeline 并行                                      |
+| ModelRegistry   | 模型引擎池。按 engine 文件 SHA-256 去重，多 pipeline 共享同一 `IModelEngine` 实例（节省显存）。引用计数 + TTL 过期清理                               |
+| ControlChannel  | 控制通道。WebSocket 接收实时参数（ROI 坐标、阈值），通过 `set_param()` 原子写入节点；REST 路径处理 pipeline CRUD                                   |
+| Pipeline (DAG)  | 单条 pipeline 的执行引擎。维护节点有向无环图，节点间通过 `BoundedQueue` 连接，异步生产者-消费者模式驱动数据流                                               |
+| SourceNode      | 视频源节点（`FileSource` / `RtspSource`）。通过 `DecodeMode` 配置选择 GPU 硬解码（`cv::cudacodec`）或 CPU 软解码（`cv::VideoCapture`）      |
+| InferNode       | 推理节点。持有 `IModelEngine` 的多个 `IExecContext`（`parallel_workers=N`），每个 worker 独立 CUDA stream 并行推理，输出按 frame_id 重排序保证有序 |
+
 
 **HAL 硬件抽象层**
 
-| 接口 | 说明 | 一期实现 |
-|---|---|---|
-| IModelEngine | 重资源，代表一个已加载的模型引擎。由 ModelRegistry 管理生命周期，可创建多个推理上下文 | `TrtEngine`（TensorRT） |
-| IExecContext | 轻资源，每个 InferNode worker 独占一个。持有独立 CUDA stream，执行 `infer(input, output)` | `TrtExecCtx` |
-| IAllocator | 设备内存分配器。线程安全的 `alloc/free`，256 字节对齐 | `CudaAllocator` |
-| ICodec（二期） | 编解码 HAL 抽象。`open / decode_next / close`，各平台实现各自的硬件解码器。一期 SourceNode 直接调用 OpenCV，不经过此接口 | 二期实现 |
+
+| 接口           | 说明                                                                                     | 一期实现                  |
+| ------------ | -------------------------------------------------------------------------------------- | --------------------- |
+| IModelEngine | 重资源，代表一个已加载的模型引擎。由 ModelRegistry 管理生命周期，可创建多个推理上下文                                     | `TrtEngine`（TensorRT） |
+| IExecContext | 轻资源，每个 InferNode worker 独占一个。持有独立 CUDA stream，执行 `infer(input, output)`                | `TrtExecCtx`          |
+| IAllocator   | 设备内存分配器。线程安全的 `alloc/free`，256 字节对齐                                                    | `CudaAllocator`       |
+| ICodec（二期）   | 编解码 HAL 抽象。`open / decode_next / close`，各平台实现各自的硬件解码器。一期 SourceNode 直接调用 OpenCV，不经过此接口 | 二期实现                  |
+
 
 ### 5.2 核心模块说明
 
@@ -103,6 +109,7 @@ NodeBase (C++)                    # 提供: name, state, queues, stats, set_para
 ```
 
 **节点驱动模式差异**：
+
 - `SourceNode`：主动产生帧。重写 `source_worker_loop()`，不走 `process()` 接口。循环解码 → push 到 output_queue。
 - `ProcessNode`：被动消费帧。基类 `worker_loop()` 从 input_queue pop → 调用子类 `process(Frame&)` → push 到 output_queue。
 - `SinkNode`：被动消费帧，只读不写。基类统一提供 `enabled` 属性（默认 true），可通过 `set_param("enabled", false)` 运行时关闭/开启。MjpegSink 默认 `enabled=false`。
@@ -124,11 +131,13 @@ struct NodeStats {
 通过 `NodeBase::stats()` 方法获取，`GET /pipelines/{id}/nodes` 接口返回所有节点的 NodeStats。
 
 **DAG 拓扑支持**：
+
 - **支持合并（多对一）**：多个 SourceNode 的 output_queue 指向同一个下游节点的 input_queue。BoundedQueue 支持多生产者并发 push，Frame 通过 move 入队，零拷贝。典型场景：多路视频流 → 同一个 DetectorNode。
 - **不支持分叉（一对多）**：Frame 是 move-only 的，无法同时给多个下游。如需"预览 + 推理并行"，使用多条独立 Pipeline 共享模型（通过 ModelRegistry）。
 - `stream_id`（Frame 字段）区分多路视频帧来源，下游节点可据此做流级别的逻辑区分。
 
 **合并拓扑下的停止机制**：
+
 - Pipeline 追踪每个共享 input_queue 连接了哪些上游 Source
 - 只有当所有连接的 Source 都结束后，才 stop 该共享队列
 - 单个 Source 结束不会影响其他 Source 继续向同一队列 push
@@ -191,14 +200,16 @@ frame.image ──────►  读 image        读 image+         读 detec
 
 各节点读写约定：
 
-| 节点类型 | 读取字段 | 写入字段 | 说明 |
-|---|---|---|---|
-| `SourceNode` | — | `stream_id`, `frame_id`, `pts_us`, `image` | 解码后的原始帧 |
-| `DetectorNode` | `image` | `detections[]`（bbox, coarse class_id, confidence） | YOLOv8 检测，class_id 为模型原始类别 |
+
+| 节点类型             | 读取字段                    | 写入字段                                                 | 说明                                                            |
+| ---------------- | ----------------------- | ---------------------------------------------------- | ------------------------------------------------------------- |
+| `SourceNode`     | —                       | `stream_id`, `frame_id`, `pts_us`, `image`           | 解码后的原始帧                                                       |
+| `DetectorNode`   | `image`                 | `detections[]`（bbox, coarse class_id, confidence）    | YOLOv8 检测，class_id 为模型原始类别                                    |
 | `ClassifierNode` | `image`, `detections[]` | `detections[i].class_id`, `detections[i].confidence` | 对每个 detection 的 bbox crop 做细粒度分类，**覆盖** class_id 与 confidence |
-| `TrackerNode` | `detections[]` | `tracks[]`, `detections[i].track_id` | ByteTrack 关联，写入轨迹 ID |
-| `PyNode` | 任意字段 | `user_data["key"]` | Python 业务节点，结果按 key 挂载到 user_data map |
-| `SinkNode` | 任意字段 | — | 只读，不修改 Frame |
+| `TrackerNode`    | `detections[]`          | `tracks[]`, `detections[i].track_id`                 | ByteTrack 关联，写入轨迹 ID                                          |
+| `PyNode`         | 任意字段                    | `user_data["key"]`                                   | Python 业务节点，结果按 key 挂载到 user_data map                         |
+| `SinkNode`       | 任意字段                    | —                                                    | 只读，不修改 Frame                                                  |
+
 
 **禁止**：节点内不得替换整个 `frame.image`（会泄漏 GPU 内存）；不得拷贝 Frame（编译期已通过 `= delete` 阻止）。
 
@@ -254,11 +265,13 @@ struct Tensor {
 };
 ```
 
-| 内存类型 | `MemoryType` 枚举 | 分配器 | 典型用途 |
-|---|---|---|---|
-| CUDA 设备显存 | `CUDA_DEVICE` | `CudaAllocator` | 推理输入/输出 tensor，GPU 解码帧 |
-| CUDA Pinned 内存 | `CUDA_HOST` | `CudaPinnedAllocator` | H2D / D2H 中转，DMA 加速 |
-| CPU 普通内存 | `CPU` | `CpuAllocator`（256 字节对齐） | CPU 软解码帧，Python 侧数据 |
+
+| 内存类型           | `MemoryType` 枚举 | 分配器                      | 典型用途                   |
+| -------------- | --------------- | ------------------------ | ---------------------- |
+| CUDA 设备显存      | `CUDA_DEVICE`   | `CudaAllocator`          | 推理输入/输出 tensor，GPU 解码帧 |
+| CUDA Pinned 内存 | `CUDA_HOST`     | `CudaPinnedAllocator`    | H2D / D2H 中转，DMA 加速    |
+| CPU 普通内存       | `CPU`           | `CpuAllocator`（256 字节对齐） | CPU 软解码帧，Python 侧数据    |
+
 
 跨节点传递 Tensor 时通过 `std::move` 转移所有权，**不触发内存拷贝**。若下游节点需要 CPU 数据（如 Python 读取），由该节点自行调用 `cudaMemcpy` D2H，不由框架自动转换。
 

@@ -31,6 +31,8 @@ struct NodeStats {
     uint64_t processed_count = 0;  ///< 已处理帧数
     uint64_t error_count = 0;      ///< 错误计数
     double fps = 0.0;              ///< 处理帧率
+    double latency_ms = 0.0;      ///< 平均处理延迟（毫秒）
+    NodeState state = NodeState::INIT;  ///< 节点状态
     QueueStats input_queue_stats;  ///< 输入队列统计
 };
 
@@ -166,6 +168,9 @@ protected:
     std::atomic<uint64_t> frames_since_last_fps_{0};
     std::atomic<double> current_fps_{0.0};
     std::mutex fps_mutex_;
+
+    // 延迟跟踪（指数移动平均）
+    std::atomic<double> current_latency_ms_{0.0};
 };
 
 /// @brief NodeBase 智能指针类型

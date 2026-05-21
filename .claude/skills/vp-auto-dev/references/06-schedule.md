@@ -2,16 +2,19 @@
 
 ### 6.1 阶段划分总览
 
-| 阶段 | 目标 | 周期 |
-| :--- | :--- | :--- |
-| Phase 0 | 工程骨架 + CI 基础 | 第 1-2 周 |
-| Phase 1 | C++ 核心调度框架 | 第 3-5 周 |
-| Phase 2 | NVIDIA 推理 + 编解码 | 第 6-9 周 |
+
+| 阶段      | 目标              | 周期        |
+| ------- | --------------- | --------- |
+| Phase 0 | 工程骨架 + CI 基础    | 第 1-2 周   |
+| Phase 1 | C++ 核心调度框架      | 第 3-5 周   |
+| Phase 2 | NVIDIA 推理 + 编解码 | 第 6-9 周   |
 | Phase 3 | Python 绑定 + DSL | 第 10-12 周 |
-| Phase 4 | 管理 API + 前端交付 | 第 13-15 周 |
-| Phase 5 | 集成验证 + 收尾 | 第 16-18 周 |
+| Phase 4 | 管理 API + 前端交付   | 第 13-15 周 |
+| Phase 5 | 集成验证 + 收尾       | 第 16-18 周 |
+
 
 ---
+
 #### Phase 0：工程骨架 + CI 基础（第 1-2 周）
 
 目的：建立可编译、可测试的项目骨架，CI 从第一天起运行。
@@ -57,7 +60,7 @@
   - struct Classification（detection_index, class_id, confidence）
   - struct Track（track_id, class_id, bbox, age, confidence）
   - struct Tensor（shape, dtype, void* data, IAllocator*）
-  - class BoundedQueue<T>（DROP_OLDEST / DROP_NEWEST / BLOCK）
+  - class BoundedQueue（DROP_OLDEST / DROP_NEWEST / BLOCK）
   - struct QueueStats
 - 验收标准
   - BoundedQueue 单元测试全绿：入队/出队/DROP_OLDEST 溢出/BLOCK 阻塞-唤醒
@@ -132,6 +135,7 @@
   ```
 
 ---
+
 #### Phase 1：C++ 核心调度框架（第 3-5 周）
 
 目的：实现节点图、调度器、Pipeline 生命周期。
@@ -449,6 +453,7 @@
   ```
 
 ---
+
 #### Phase 2：NVIDIA 推理 + 编解码（第 6-9 周）
 
 目的：接入真实 GPU，完成 TRT 推理、`cv::cudacodec` GPU 硬解码 / CPU 软解码、YOLOv8/分类/分割验证。
@@ -532,7 +537,7 @@
   - class DetectionDecoder（anchor-free NMS）
   - struct Detection（bbox, class_id, confidence）
 - 验收标准
-  - COCO val2017 subset（100张）mAP@0.5 ≥ 原始 PyTorch 结果 -1%
+  - COCO val2017 subset（100张）[mAP@0.5](mailto:mAP@0.5) ≥ 原始 PyTorch 结果 -1%
   - 单路 1080p ≥ 25 FPS
 - 测试方法
   - 集成测试 + benchmark 脚本
@@ -583,6 +588,7 @@
   - 集成测试
 
 ---
+
 #### Phase 3：Python 绑定 + DSL（第 10-12 周）
 
 目的：Python 层可编排和运行完整 pipeline，用户能写自定义业务节点（独立进程，真并行）。
@@ -592,11 +598,13 @@
 **3-A 绑定粒度**：绑定所有核心类 + PipelineBuilder、PipelineConfig、PipelineStats、NodeStats、QueueStats、AnnotatorNode、MockModelEngine。
 
 **3-B GIL 管理策略**：
+
 - `Pipeline.run()` / `stop()` 释放 GIL（`call_guard<gil_scoped_release>`）
 - PyNode C++ 回调时获取 GIL（`gil_scoped_acquire`）
 - Frame 传递给 Python 时用 `rv_policy::reference`（零拷贝引用）
 
 **3-C DSL 设计**：
+
 - `>>` 直接返回 Pipeline 对象（去掉 `.build()` 步骤）
 - 合并语法：`[src1, src2] >> det` 表示多 source 合并到同一下游
 - 公开 API：`run(block=False, **config)` + `stop()`
@@ -606,6 +614,7 @@
 - PipelineConfig 通过 Pipeline 属性或 `run()` 参数传入
 
 **3-D CustomNode 子进程架构**：
+
 - 用户面向 `CustomNode` 基类，重写 `on_frame(frame: FrameView)`
 - `FrameView` 安全视图，process 结束后自动失效（防止悬垂引用）
 - 默认 `process_mode = "subprocess"`：每个 CustomNode 跑独立进程（独立 GIL，真并行）
@@ -617,6 +626,7 @@
 - 子进程崩溃自动重启，不影响主 pipeline
 
 **3-E YAML 序列化**：
+
 - `pipeline.export_yaml(path)` / `Pipeline.load_yaml(path)`
 - CustomNode 序列化：记录 `module`、`class`、`process_mode`、用户自定义 config
 - `load_yaml` 可自动 import 模块、实例化 CustomNode
@@ -629,12 +639,12 @@
   - python/bindings/bind_pipeline.cpp
   - python/bindings/bind_nodes.cpp
   - python/bindings/bind_frame.cpp
-  - python/visionpipe/__init__.py
+  - python/visionpipe/**init**.py
   - tests/unit/python/test_bindings.py
   - tests/unit/python/test_dsl.py
 - 实现的类/函数
   - 绑定：Pipeline、PipelineManager、Frame、Detection、Track、所有 Node 类型、Config 类型
-  - `>>` 运算符：`NodeBase.__rshift__` 直接返回 Pipeline（非 PipelineBuilder）
+  - `>>` 运算符：`NodeBase.__rshift_`_ 直接返回 Pipeline（非 PipelineBuilder）
   - 合并语法：`list.__rshift__` 或 Pipeline 接受 list 参数，`[src1, src2] >> det` 创建合并拓扑
   - `Pipeline.run(block=False, **config)`：统一入口，`block=False` 后台运行，`block=True` 阻塞
   - `Pipeline.stop(drain=True)`：优雅停止
@@ -693,6 +703,7 @@
   - pytest，无 GPU（序列化逻辑不需要 GPU）
 
 ---
+
 #### Phase 4：管理 API + 前端交付（第 13-15 周）
 
 目的：完成 REST 管理 API（分离生命周期）、WebRTC 视频流、通用 WebSocket 控制通道、ROI 热更、结构化结果推送（独立 WS）、节点状态监控接口。
@@ -767,12 +778,13 @@
   - class MjpegSink : public SinkNode — JPEG 编码 → multipart HTTP stream（/mjpeg/{pipeline_id}），默认 enabled=false
 - 验收标准
   - JsonResultSink 输出可被 json::parse 解析，字段完整
-  - MjpegSink 默认关闭，set_param("enabled", true) 后浏览器 <img> 标签可直接播放
+  - MjpegSink 默认关闭，set_param("enabled", true) 后浏览器  标签可直接播放
   - SinkNode enabled=false 时不消耗 CPU/GPU 资源（跳过处理）
 - 测试方法
   - 集成测试
 
 ---
+
 #### Phase 5：集成验证 + 收尾（第 16-18 周）
 
 目的：确保 Phase 0-4 每个环节功能正确、数据流完整、多 pipeline 互不干扰，文档和 demo 收尾。
@@ -989,33 +1001,36 @@
   - 基于 RTX 3060 12GB + WSL2 环境验证可运行
 
 ---
+
 ### 6.2 项目跟踪表
 
-| ID | 任务 | 阶段 | 优先级 | 状态 | 依赖 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| T0.1 | 目录结构与 CMake 配置 | P0 | P0 | [x] | — |
-| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [x] | T0.1 |
-| T0.3 | 日志系统初始化 | P0 | P0 | [x] | T0.1 |
-| T1.1 | 节点基类与 DAG | P1 | P0 | [x] | T0.2 |
-| T1.2 | PipelineManager + 生命周期 | P1 | P0 | [x] | T1.1 |
-| T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [x] | T0.2 |
-| T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
-| T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [x] | T1.3 |
-| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [x] | T1.1 |
-| T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | — | P1 | 未来扩展 | T2.2a | 移至「未来扩展」章节，不纳入正式排期 |
-| T2.3 | YOLOv8 检测节点 | P2 | P0 | [x] | T2.1、T2.2a |
-| T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [x] | T2.1 |
-| T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 |
-| T3.1 | nanobind 绑定核心类 + DSL 重构 | P3 | P0 | [x] | T2.3、T2.4 | |
-| T3.2 | CustomNode 子进程架构 | P3 | P0 | [x] | T3.1 | |
-| T3.3 | YAML 导出/导入 + CustomNode 支持 | P3 | P1 | [x] | T3.1 | |
-| T4.1 | 内嵌管理 REST API | P4 | P0 | [ ] | T3.1 | 需要：分离生命周期（create/start/stop/delete）+ 新增 GET /nodes 接口 + NodeStats 补齐 latency_ms/state |
-| T4.2 | WebRTC Sink | P4 | P0 | [ ] | T3.1 | 需要：继承 SinkNode（非 NodeBase） |
-| T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [ ] | T4.1、T4.2 | 需要：通用 set_param 消息转发（不仅 ROI） |
-| T4.4 | JsonResultSink + MjpegSink | P4 | P0 | [ ] | T3.1 | 需要：SinkNode 基类 + enabled 属性 + MjpegSink 默认关闭 + JsonResult 独立 WS |
-| T5.1 | 多 Pipeline 并发集成测试 | P5 | P0 | [ ] | T4.1 | 需 rework：修复测试资产路径 + 去掉 VRAM ≤10% 硬指标 |
-| T5.2 | 端到端验证测试（三层验证） | P5 | P0 | [ ] | T4.1、T4.3、T4.4 |
-| T5.3 | 文档与 Demo | P5 | P1 | [ ] | T5.1、T5.2 |
+
+| ID    | 任务                               | 阶段  | 优先级 | 状态   | 依赖             |
+| ----- | -------------------------------- | --- | --- | ---- | -------------- |
+| T0.1  | 目录结构与 CMake 配置                   | P0  | P0  | [x]  | —              |
+| T0.2  | 基础数据结构 + 单元测试框架                  | P0  | P0  | [x]  | T0.1           |
+| T0.3  | 日志系统初始化                          | P0  | P0  | [x]  | T0.1           |
+| T1.1  | 节点基类与 DAG                        | P1  | P0  | [x]  | T0.2           |
+| T1.2  | PipelineManager + 生命周期           | P1  | P0  | [x]  | T1.1           |
+| T1.3  | ModelRegistry（Mock 引擎）           | P1  | P0  | [x]  | T0.2           |
+| T1.4  | parallel_workers 支持              | P1  | P0  | [x]  | T1.1           |
+| T2.1  | HAL NVIDIA 实现（TRT）               | P2  | P0  | [x]  | T1.3           |
+| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2  | P0  | [x]  | T1.1           |
+| T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期）       | —   | P1  | 未来扩展 | T2.2a          |
+| T2.3  | YOLOv8 检测节点                      | P2  | P0  | [x]  | T2.1、T2.2a     |
+| T2.4  | 分类节点 + 帧内 batch                  | P2  | P0  | [x]  | T2.1           |
+| T2.5  | 分割节点 + ByteTrack                 | P2  | P1  | [x]  | T2.1           |
+| T3.1  | nanobind 绑定核心类 + DSL 重构          | P3  | P0  | [x]  | T2.3、T2.4      |
+| T3.2  | CustomNode 子进程架构                 | P3  | P0  | [x]  | T3.1           |
+| T3.3  | YAML 导出/导入 + CustomNode 支持       | P3  | P1  | [x]  | T3.1           |
+| T4.1  | 内嵌管理 REST API                    | P4  | P0  | [x]  | T3.1           |
+| T4.2  | WebRTC Sink                      | P4  | P0  | [ ]  | T3.1           |
+| T4.3  | WebSocket 控制通道 + ROI 热更          | P4  | P0  | [ ]  | T4.1、T4.2      |
+| T4.4  | JsonResultSink + MjpegSink       | P4  | P0  | [ ]  | T3.1           |
+| T5.1  | 多 Pipeline 并发集成测试                | P5  | P0  | [ ]  | T4.1           |
+| T5.2  | 端到端验证测试（三层验证）                    | P5  | P0  | [ ]  | T4.1、T4.3、T4.4 |
+| T5.3  | 文档与 Demo                         | P5  | P1  | [ ]  | T5.1、T5.2      |
+
 
 ---
 
@@ -1034,6 +1049,7 @@
 #### 性能 benchmark + 专项调优
 
 待功能全链路验证通过后，独立做性能评测（参见 Section 4.4 参考指标），包括：
+
 - 吞吐量 benchmark（单路 / 多路）
 - 延迟 profiling（节点级 latency 分析）
 - 显存优化（模型共享效率、Tensor 内存池）

@@ -10,16 +10,18 @@
 
 ### 0.1 必需依赖
 
-| 组件 | 版本要求 | 验证命令 |
-|------|----------|----------|
-| CUDA Toolkit | >=11.8 | `nvcc --version` |
-| cuDNN | >=8.6 | `cat /usr/local/cuda/include/cudnn_version.h` |
-| TensorRT | >=8.6 | `trtexec --version` |
-| Python | >=3.10 | `python3 --version` |
-| CMake | >=3.20 | `cmake --version` |
-| GCC | >=9.0 | `g++ --version` |
-| uv | 最新版 | `uv --version` |
-| clang-format | >=14 | `clang-format --version` |
+
+| 组件           | 版本要求   | 验证命令                                          |
+| ------------ | ------ | --------------------------------------------- |
+| CUDA Toolkit | >=11.8 | `nvcc --version`                              |
+| cuDNN        | >=8.6  | `cat /usr/local/cuda/include/cudnn_version.h` |
+| TensorRT     | >=8.6  | `trtexec --version`                           |
+| Python       | >=3.10 | `python3 --version`                           |
+| CMake        | >=3.20 | `cmake --version`                             |
+| GCC          | >=9.0  | `g++ --version`                               |
+| uv           | 最新版    | `uv --version`                                |
+| clang-format | >=14   | `clang-format --version`                      |
+
 
 ### 0.2 环境配置
 
@@ -40,10 +42,12 @@ uv pip install -e ".[dev]"
 
 采用 **系统包管理器 + CMake FetchContent** 混合方案：
 
-| 依赖类型 | 管理方式 | 示例 |
-|----------|----------|------|
-| 重依赖（CUDA、TensorRT、OpenCV） | 系统包管理器或源码编译 | OpenCV 需源码编译，开启 `-DWITH_CUDA=ON -DWITH_NVCUVID=ON`（系统 `libopencv-dev` 通常不含 CUDA 模块） |
-| 轻依赖（spdlog、nlohmann-json、googletest、nanobind） | CMake FetchContent | 自动下载到 `build/_deps/` |
+
+| 依赖类型                                          | 管理方式               | 示例                                                                                  |
+| --------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------- |
+| 重依赖（CUDA、TensorRT、OpenCV）                     | 系统包管理器或源码编译        | OpenCV 需源码编译，开启 `-DWITH_CUDA=ON -DWITH_NVCUVID=ON`（系统 `libopencv-dev` 通常不含 CUDA 模块） |
+| 轻依赖（spdlog、nlohmann-json、googletest、nanobind） | CMake FetchContent | 自动下载到 `build/_deps/`                                                                |
+
 
 ### 0.3 GPU 环境要求
 
@@ -56,10 +60,12 @@ uv pip install -e ".[dev]"
 
 ### 0.4 代码风格
 
-| 语言 | 工具 | 配置文件 |
-|------|------|----------|
-| C++ | clang-format | `.clang-format`（基于 Google 风格） |
-| Python | ruff + mypy | `pyproject.toml` |
+
+| 语言     | 工具           | 配置文件                          |
+| ------ | ------------ | ----------------------------- |
+| C++    | clang-format | `.clang-format`（基于 Google 风格） |
+| Python | ruff + mypy  | `pyproject.toml`              |
+
 
 ```bash
 # 格式化检查（提交前运行）
@@ -70,12 +76,14 @@ uv run mypy python/
 
 ### 0.5 测试数据
 
-| 资源 | 路径 | 说明 |
-|------|------|------|
-| YOLOv8 ONNX | `models/yolov8/yolov8n.onnx` | Ultralytics 官方下载 |
-| YOLOv8 TRT Engine | `models/yolov8/yolov8n.engine` | 由 `convert.sh` 生成，不纳入 git |
-| 测试视频 | `tests/data/sample_100frames.mp4` | 1080p H.264，100 帧 |
-| COCO 子集 | `tests/data/coco_val_subset/` | 100 张验证集图片 |
+
+| 资源                | 路径                                | 说明                        |
+| ----------------- | --------------------------------- | ------------------------- |
+| YOLOv8 ONNX       | `models/yolov8/yolov8n.onnx`      | Ultralytics 官方下载          |
+| YOLOv8 TRT Engine | `models/yolov8/yolov8n.engine`    | 由 `convert.sh` 生成，不纳入 git |
+| 测试视频              | `tests/data/sample_100frames.mp4` | 1080p H.264，100 帧         |
+| COCO 子集           | `tests/data/coco_val_subset/`     | 100 张验证集图片                |
+
 
 资源获取脚本：`tests/data/download_test_assets.sh`（首次构建时自动运行）
 
@@ -101,18 +109,20 @@ VisionPipe-py 是一个面向生产环境的**视频 AI 推理框架**，底层�
 
 ## 2. 核心特点
 
-| # | 特点 | 说明 |
-|---|---|---|
-| 1 | **Python DSL 编排** | 用 `>>` 运算符连接节点构图，可导出/导入 YAML 用于版本化和运维下发 |
-| 2 | **C++ 热路径，零 GIL 干扰** | 推理、编解码、调度全在 C++ 线程池；Python 业务节点回调时短暂 acquire GIL |
-| 3 | **同进程多 Pipeline** | PipelineManager 支持动态创建/销毁多条 pipeline，内嵌 REST 管理 API，无需 Docker 隔离 |
-| 4 | **模型去重复用** | ModelRegistry 按引擎文件 SHA-256 去重，多条 pipeline 共享同一 `IModelEngine`，VRAM 不重复占用 |
-| 5 | **优雅启停协议** | DRAINING → teardown → STOPPED 三段式退出，GPU 资源安全释放，典型耗时 <500ms |
-| 6 | **节点并发扩展** | 瓶颈节点配置 `parallel_workers=N`，多个 worker 共享模型权重独立执行上下文，真 GPU 并行 |
-| 7 | **有界队列 + 溢出策略** | 每节点有界输入队列；实时流默认 `DROP_OLDEST` 保低延迟，文件处理可选 `BLOCK` 不丢帧 |
-| 8 | **ROI 实时热更** | 前端 canvas 框选 → WebSocket 归一化坐标 → C++ `set_param()` 原子写 → 下一帧生效 |
-| 9 | **HAL 硬件抽象** | `IModelEngine` / `IExecContext` / `IAllocator` 三接口屏蔽厂商；扩展新硬件只需实现三个类 |
-| 10 | **内置可观测性** | 每节点暴露队列占用率、丢帧计数、FPS；健康接口 `GET /pipelines/{id}/health`；spdlog 结构化日志 |
+
+| #   | 特点                   | 说明                                                                        |
+| --- | -------------------- | ------------------------------------------------------------------------- |
+| 1   | **Python DSL 编排**    | 用 `>>` 运算符连接节点构图，可导出/导入 YAML 用于版本化和运维下发                                   |
+| 2   | **C++ 热路径，零 GIL 干扰** | 推理、编解码、调度全在 C++ 线程池；Python 业务节点回调时短暂 acquire GIL                          |
+| 3   | **同进程多 Pipeline**    | PipelineManager 支持动态创建/销毁多条 pipeline，内嵌 REST 管理 API，无需 Docker 隔离          |
+| 4   | **模型去重复用**           | ModelRegistry 按引擎文件 SHA-256 去重，多条 pipeline 共享同一 `IModelEngine`，VRAM 不重复占用 |
+| 5   | **优雅启停协议**           | DRAINING → teardown → STOPPED 三段式退出，GPU 资源安全释放，典型耗时 <500ms                |
+| 6   | **节点并发扩展**           | 瓶颈节点配置 `parallel_workers=N`，多个 worker 共享模型权重独立执行上下文，真 GPU 并行              |
+| 7   | **有界队列 + 溢出策略**      | 每节点有界输入队列；实时流默认 `DROP_OLDEST` 保低延迟，文件处理可选 `BLOCK` 不丢帧                     |
+| 8   | **ROI 实时热更**         | 前端 canvas 框选 → WebSocket 归一化坐标 → C++ `set_param()` 原子写 → 下一帧生效            |
+| 9   | **HAL 硬件抽象**         | `IModelEngine` / `IExecContext` / `IAllocator` 三接口屏蔽厂商；扩展新硬件只需实现三个类       |
+| 10  | **内置可观测性**           | 每节点暴露队列占用率、丢帧计数、FPS；健康接口 `GET /pipelines/{id}/health`；spdlog 结构化日志        |
+
 
 ---
 
@@ -120,46 +130,52 @@ VisionPipe-py 是一个面向生产环境的**视频 AI 推理框架**，底层�
 
 ### 3.1 核心依赖
 
-| 层次 | 组件 | 版本要求 | 用途 |
-|---|---|---|---|
-| 推理 | TensorRT | >=8.6 | 模型编译与 GPU 推理 |
-| 编解码（一期） | `cv::cudacodec::VideoReader`（NVDEC 硬解） | OpenCV >=4.7（CUDA + NVCUVID build） | GPU 直接解码，零拷贝，快速验证全链路 |
-| 编解码（二期） | ICodec HAL 抽象 + 平台专属实现 | 各平台 SDK | 跨平台硬件解码（NVDEC/DVPP/MPP） |
-| 编解码（CPU fallback） | OpenCV `VideoCapture` (CPU 路径) | OpenCV >=4.7 | 无 GPU 解码器时的 CPU 软解码 fallback |
-| 图像处理 | OpenCV | >=4.7（CUDA + NVCUVID build） | 预处理、可视化、一期视频解码 |
-| GPU 计算 | CUDA | >=11.8 | CUDA stream 管理、内存分配 |
-| 追踪算法 | ByteTrack（内置 C++ 实现） | — | 多目标追踪 |
-| Python 绑定 | nanobind | >=1.9 | C++ ↔ Python 互调，含 `gil_scoped_release` |
+
+| 层次                | 组件                                     | 版本要求                               | 用途                                     |
+| ----------------- | -------------------------------------- | ---------------------------------- | -------------------------------------- |
+| 推理                | TensorRT                               | >=8.6                              | 模型编译与 GPU 推理                           |
+| 编解码（一期）           | `cv::cudacodec::VideoReader`（NVDEC 硬解） | OpenCV >=4.7（CUDA + NVCUVID build） | GPU 直接解码，零拷贝，快速验证全链路                   |
+| 编解码（二期）           | ICodec HAL 抽象 + 平台专属实现                 | 各平台 SDK                            | 跨平台硬件解码（NVDEC/DVPP/MPP）                |
+| 编解码（CPU fallback） | OpenCV `VideoCapture` (CPU 路径)         | OpenCV >=4.7                       | 无 GPU 解码器时的 CPU 软解码 fallback           |
+| 图像处理              | OpenCV                                 | >=4.7（CUDA + NVCUVID build）        | 预处理、可视化、一期视频解码                         |
+| GPU 计算            | CUDA                                   | >=11.8                             | CUDA stream 管理、内存分配                    |
+| 追踪算法              | ByteTrack（内置 C++ 实现）                   | —                                  | 多目标追踪                                  |
+| Python 绑定         | nanobind                               | >=1.9                              | C++ ↔ Python 互调，含 `gil_scoped_release` |
+
 
 ### 3.2 构建与工程
 
-| 维度 | 选型 | 说明 |
-|---|---|---|
-| C++ 标准 | C++17 | `optional`/`variant`/`filesystem`/结构化绑定 |
-| 构建系统 | CMake 3.20+ | CUDA 原生支持，FetchContent 管理轻依赖 |
-| 包管理 | 系统包 + FetchContent | 重依赖系统安装；spdlog/nlohmann-json/cpp-httplib 由 FetchContent 拉取 |
-| Python 版本 | >=3.10 | match 语法，类型注解完善 |
-| C++ 日志 | spdlog | 异步模式，支持 JSON 结构化输出 |
-| Python 日志 | logging + structlog | 与 spdlog 统一输出格式 |
-| 序列化 | nlohmann/json (C++) + pydantic v2 (Python) | 管理 API 数据格式、Pipeline YAML 导出 |
-| WebRTC | libdatachannel | 轻量 C++ 原生，无 Chromium 依赖 |
-| 管理 API | aiohttp（协程，同进程） | 暴露 Pipeline CRUD 和健康检查接口 |
-| 测试（C++） | Google Test + Google Mock | 单元测试 / 集成测试 |
-| 测试（Python） | pytest + pytest-asyncio | Python 层及 E2E 测试 |
-| CI | GitHub Actions | Ubuntu 22.04，CUDA mock 环境单元测试，实机集成测试 |
-| 目标 OS | Linux（Ubuntu 22.04/24.04） | 服务器端及 Jetson 均为 Linux |
-| License | Apache 2.0 | 依赖均兼容（避免 GPL FFmpeg 选项） |
+
+| 维度         | 选型                                         | 说明                                                         |
+| ---------- | ------------------------------------------ | ---------------------------------------------------------- |
+| C++ 标准     | C++17                                      | `optional`/`variant`/`filesystem`/结构化绑定                    |
+| 构建系统       | CMake 3.20+                                | CUDA 原生支持，FetchContent 管理轻依赖                               |
+| 包管理        | 系统包 + FetchContent                         | 重依赖系统安装；spdlog/nlohmann-json/cpp-httplib 由 FetchContent 拉取 |
+| Python 版本  | >=3.10                                     | match 语法，类型注解完善                                            |
+| C++ 日志     | spdlog                                     | 异步模式，支持 JSON 结构化输出                                         |
+| Python 日志  | logging + structlog                        | 与 spdlog 统一输出格式                                            |
+| 序列化        | nlohmann/json (C++) + pydantic v2 (Python) | 管理 API 数据格式、Pipeline YAML 导出                               |
+| WebRTC     | libdatachannel                             | 轻量 C++ 原生，无 Chromium 依赖                                    |
+| 管理 API     | aiohttp（协程，同进程）                            | 暴露 Pipeline CRUD 和健康检查接口                                   |
+| 测试（C++）    | Google Test + Google Mock                  | 单元测试 / 集成测试                                                |
+| 测试（Python） | pytest + pytest-asyncio                    | Python 层及 E2E 测试                                           |
+| CI         | GitHub Actions                             | Ubuntu 22.04，CUDA mock 环境单元测试，实机集成测试                       |
+| 目标 OS      | Linux（Ubuntu 22.04/24.04）                  | 服务器端及 Jetson 均为 Linux                                      |
+| License    | Apache 2.0                                 | 依赖均兼容（避免 GPL FFmpeg 选项）                                    |
+
 
 ### 3.3 一期验证模型
 
-| 任务 | 模型 | 优先级 | 交付物 |
-|---|---|---|---|
-| 目标检测 | YOLOv8 / YOLOv11 | P0 | ONNX→TRT 转换脚本 + 后处理插件 + benchmark |
-| 图像分类 | ResNet50 / EfficientNet-B0 / ShuffleNetV2 | P0 | 同上 |
-| 实例分割 | YOLOv8-seg | P1 | 同上 |
-| 目标追踪 | ByteTrack | P1 | 内置 C++ 实现，无需 GPU |
-| 语义分割 | — | 二期 | — |
-| 姿态估计 | — | 二期 | — |
+
+| 任务   | 模型                                        | 优先级 | 交付物                               |
+| ---- | ----------------------------------------- | --- | --------------------------------- |
+| 目标检测 | YOLOv8 / YOLOv11                          | P0  | ONNX→TRT 转换脚本 + 后处理插件 + benchmark |
+| 图像分类 | ResNet50 / EfficientNet-B0 / ShuffleNetV2 | P0  | 同上                                |
+| 实例分割 | YOLOv8-seg                                | P1  | 同上                                |
+| 目标追踪 | ByteTrack                                 | P1  | 内置 C++ 实现，无需 GPU                  |
+| 语义分割 | —                                         | 二期  | —                                 |
+| 姿态估计 | —                                         | 二期  | —                                 |
+
 
 ---
 
@@ -189,48 +205,56 @@ tests/
 
 #### 单元测试
 
-| 测试目标 | 方法 |
-|---|---|
-| `BoundedQueue` 入队/出队/溢出策略 | 纯 C++ 逻辑，Google Test |
-| `ModelRegistry` SHA-256 计算、引用计数、TTL 清理 | 加载真实 Mock 模型 |
-| `PipelineManager` 状态机（INIT→RUNNING→DRAINING→STOPPED） | Mock Pipeline |
-| `ControlChannel` ROI 坐标归一化/反归一化 | 纯数学逻辑 |
-| Python DSL 节点图构建、YAML 导出/导入 | pytest，需加载 C++ 扩展 |
-| pydantic 管理 API 数据模型校验 | pytest |
+
+| 测试目标                                                 | 方法                   |
+| ---------------------------------------------------- | -------------------- |
+| `BoundedQueue` 入队/出队/溢出策略                            | 纯 C++ 逻辑，Google Test |
+| `ModelRegistry` SHA-256 计算、引用计数、TTL 清理               | 加载真实 Mock 模型         |
+| `PipelineManager` 状态机（INIT→RUNNING→DRAINING→STOPPED） | Mock Pipeline        |
+| `ControlChannel` ROI 坐标归一化/反归一化                      | 纯数学逻辑                |
+| Python DSL 节点图构建、YAML 导出/导入                          | pytest，需加载 C++ 扩展    |
+| pydantic 管理 API 数据模型校验                               | pytest               |
+
 
 #### 集成测试（需 GPU）
 
-| 测试目标 | 方法 |
-|---|---|
-| `TrtInferNode` 端到端推理（输入 tensor → 输出 bbox） | 加载真实 YOLOv8 TRT engine |
-| 多 worker 并行推理结果一致性 | 对比 worker=1 和 worker=3 结果差异 <1e-4 |
-| `FileSource`（GPU/CPU/AUTO 三种 DecodeMode）解码帧数与视频帧数匹配 | 固定测试视频文件（100帧）|
-| Pipeline 优雅停止：DRAINING 期间不丢已入队帧 | `BLOCK` 策略下计帧 |
-| ModelRegistry 跨 Pipeline 共享：两条 pipeline 共用同一 engine，VRAM 增量为零 | `nvml` 查询显存 |
-| `set_param()` 热更 ROI 原子性：热更后第 N+1 帧生效，第 N 帧不受影响 | 帧级断言 |
+
+| 测试目标                                                          | 方法                                |
+| ------------------------------------------------------------- | --------------------------------- |
+| `TrtInferNode` 端到端推理（输入 tensor → 输出 bbox）                     | 加载真实 YOLOv8 TRT engine            |
+| 多 worker 并行推理结果一致性                                            | 对比 worker=1 和 worker=3 结果差异 <1e-4 |
+| `FileSource`（GPU/CPU/AUTO 三种 DecodeMode）解码帧数与视频帧数匹配           | 固定测试视频文件（100帧）                    |
+| Pipeline 优雅停止：DRAINING 期间不丢已入队帧                               | `BLOCK` 策略下计帧                     |
+| ModelRegistry 跨 Pipeline 共享：两条 pipeline 共用同一 engine，VRAM 增量为零 | `nvml` 查询显存                       |
+| `set_param()` 热更 ROI 原子性：热更后第 N+1 帧生效，第 N 帧不受影响               | 帧级断言                              |
+
 
 #### E2E 测试
 
-| 测试目标 | 方法 |
-|---|---|
-| REST API 创建 → 启动 → 查询 → 停止 pipeline 全流程 | pytest + httpx |
-| WebRTC 流建立、收到视频帧 | puppeteer / playwright 无头浏览器 |
-| WebSocket ROI 热更后检测结果区域变化 | 构造测试帧，断言输出 bbox 在 ROI 内 |
-| 多 Pipeline 并发：物理+化学同时运行，结果互不污染 | 两路不同测试视频 + 断言类别集合不相交 |
-| 进程收到 `SIGTERM` 后所有 pipeline 优雅退出 | subprocess + 计时断言 <2s |
+
+| 测试目标                                    | 方法                           |
+| --------------------------------------- | ---------------------------- |
+| REST API 创建 → 启动 → 查询 → 停止 pipeline 全流程 | pytest + httpx               |
+| WebRTC 流建立、收到视频帧                        | puppeteer / playwright 无头浏览器 |
+| WebSocket ROI 热更后检测结果区域变化               | 构造测试帧，断言输出 bbox 在 ROI 内      |
+| 多 Pipeline 并发：物理+化学同时运行，结果互不污染          | 两路不同测试视频 + 断言类别集合不相交         |
+| 进程收到 `SIGTERM` 后所有 pipeline 优雅退出        | subprocess + 计时断言 <2s        |
+
 
 ### 4.4 性能基准测试（参考指标，后续专项评测）
 
 > ⚠️ 以下指标为参考目标，不纳入阶段门禁。待功能全链路验证通过后，再做专项性能评测与调优。
 
-| 指标 | 目标值 | 测试方法 |
-|---|---|---|
-| 单路 1080p YOLOv8 吞吐 | ≥25 FPS（RTX 3090） | 跑 300 帧取均值 |
-| 16路 1080p 同卡总吞吐 | ≥200 FPS | 16 路并发 |
-| Pipeline 启动耗时（模型已缓存） | <500ms | 计时 |
-| 优雅停止耗时 | <500ms | 计时 |
-| ROI 热更生效延迟 | ≤1 帧（@25fps = 40ms） | 帧级断言 |
-| GPU 显存占用（16路，共享模型） | 对比不共享减少 ≥30% | nvml 采样 |
+
+| 指标                   | 目标值                 | 测试方法       |
+| -------------------- | ------------------- | ---------- |
+| 单路 1080p YOLOv8 吞吐   | ≥25 FPS（RTX 3090）   | 跑 300 帧取均值 |
+| 16路 1080p 同卡总吞吐      | ≥200 FPS            | 16 路并发     |
+| Pipeline 启动耗时（模型已缓存） | <500ms              | 计时         |
+| 优雅停止耗时               | <500ms              | 计时         |
+| ROI 热更生效延迟           | ≤1 帧（@25fps = 40ms） | 帧级断言       |
+| GPU 显存占用（16路，共享模型）   | 对比不共享减少 ≥30%        | nvml 采样    |
+
 
 ---
 
@@ -284,35 +308,41 @@ tests/
 
 **Python 层**
 
-| 模块 | 说明 |
-|---|---|
-| Pipeline DSL | 用户面向的编排接口。`pipe = Pipeline()` 创建管道，`src >> det >> biz` 用 `>>` 运算符连接节点构成 DAG，`pipe.run()` 启动执行 |
-| Business Nodes | 用户继承 `PyNode` 基类编写的自定义业务逻辑节点（如告警判定、数据落库）。`process(frame)` 方法在 C++ 回调时短暂 acquire GIL 执行 |
-| Management API | aiohttp 协程服务，暴露 REST 接口（创建/启动/停止/销毁 pipeline、参数热更、健康检查），是运维和前端的对接入口 |
+
+| 模块             | 说明                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| Pipeline DSL   | 用户面向的编排接口。`pipe = Pipeline()` 创建管道，`src >> det >> biz` 用 `>>` 运算符连接节点构成 DAG，`pipe.run()` 启动执行 |
+| Business Nodes | 用户继承 `PyNode` 基类编写的自定义业务逻辑节点（如告警判定、数据落库）。`process(frame)` 方法在 C++ 回调时短暂 acquire GIL 执行        |
+| Management API | aiohttp 协程服务，暴露 REST 接口（创建/启动/停止/销毁 pipeline、参数热更、健康检查），是运维和前端的对接入口                           |
+
 
 **nanobind 绑定层**
 
-C++ 对象到 Python 的桥梁。将 Pipeline、Frame、Detection、各 Node 类型暴露为 Python 类，处理 GIL acquire/release，异常从 C++ 穿透到 Python（`VisionPipeError` → `visionpipe.VisionPipeError`）。
+C++对象到 Python 的桥梁。将 Pipeline、Frame、Detection、各 Node 类型暴露为 Python 类，处理 GIL acquire/release，异常从 C++ 穿透到 Python（`VisionPipeError` → `visionpipe.VisionPipeError`）。
 
 **C++ 核心层**
 
-| 模块 | 说明 |
-|---|---|
-| PipelineManager | 全局管理器，持有所有 pipeline 实例。负责 create/start/stop/destroy 生命周期管理，支持同进程多 pipeline 并行 |
-| ModelRegistry | 模型引擎池。按 engine 文件 SHA-256 去重，多 pipeline 共享同一 `IModelEngine` 实例（节省显存）。引用计数 + TTL 过期清理 |
-| ControlChannel | 控制通道。WebSocket 接收实时参数（ROI 坐标、阈值），通过 `set_param()` 原子写入节点；REST 路径处理 pipeline CRUD |
-| Pipeline (DAG) | 单条 pipeline 的执行引擎。维护节点有向无环图，节点间通过 `BoundedQueue` 连接，异步生产者-消费者模式驱动数据流 |
-| SourceNode | 视频源节点（`FileSource` / `RtspSource`）。通过 `DecodeMode` 配置选择 GPU 硬解码（`cv::cudacodec`）或 CPU 软解码（`cv::VideoCapture`） |
-| InferNode | 推理节点。持有 `IModelEngine` 的多个 `IExecContext`（`parallel_workers=N`），每个 worker 独立 CUDA stream 并行推理，输出按 frame_id 重排序保证有序 |
+
+| 模块              | 说明                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| PipelineManager | 全局管理器，持有所有 pipeline 实例。负责 create/start/stop/destroy 生命周期管理，支持同进程多 pipeline 并行                                      |
+| ModelRegistry   | 模型引擎池。按 engine 文件 SHA-256 去重，多 pipeline 共享同一 `IModelEngine` 实例（节省显存）。引用计数 + TTL 过期清理                               |
+| ControlChannel  | 控制通道。WebSocket 接收实时参数（ROI 坐标、阈值），通过 `set_param()` 原子写入节点；REST 路径处理 pipeline CRUD                                   |
+| Pipeline (DAG)  | 单条 pipeline 的执行引擎。维护节点有向无环图，节点间通过 `BoundedQueue` 连接，异步生产者-消费者模式驱动数据流                                               |
+| SourceNode      | 视频源节点（`FileSource` / `RtspSource`）。通过 `DecodeMode` 配置选择 GPU 硬解码（`cv::cudacodec`）或 CPU 软解码（`cv::VideoCapture`）      |
+| InferNode       | 推理节点。持有 `IModelEngine` 的多个 `IExecContext`（`parallel_workers=N`），每个 worker 独立 CUDA stream 并行推理，输出按 frame_id 重排序保证有序 |
+
 
 **HAL 硬件抽象层**
 
-| 接口 | 说明 | 一期实现 |
-|---|---|---|
-| IModelEngine | 重资源，代表一个已加载的模型引擎。由 ModelRegistry 管理生命周期，可创建多个推理上下文 | `TrtEngine`（TensorRT） |
-| IExecContext | 轻资源，每个 InferNode worker 独占一个。持有独立 CUDA stream，执行 `infer(input, output)` | `TrtExecCtx` |
-| IAllocator | 设备内存分配器。线程安全的 `alloc/free`，256 字节对齐 | `CudaAllocator` |
-| ICodec（二期） | 编解码 HAL 抽象。`open / decode_next / close`，各平台实现各自的硬件解码器。一期 SourceNode 直接调用 OpenCV，不经过此接口 | 二期实现 |
+
+| 接口           | 说明                                                                                     | 一期实现                  |
+| ------------ | -------------------------------------------------------------------------------------- | --------------------- |
+| IModelEngine | 重资源，代表一个已加载的模型引擎。由 ModelRegistry 管理生命周期，可创建多个推理上下文                                     | `TrtEngine`（TensorRT） |
+| IExecContext | 轻资源，每个 InferNode worker 独占一个。持有独立 CUDA stream，执行 `infer(input, output)`                | `TrtExecCtx`          |
+| IAllocator   | 设备内存分配器。线程安全的 `alloc/free`，256 字节对齐                                                    | `CudaAllocator`       |
+| ICodec（二期）   | 编解码 HAL 抽象。`open / decode_next / close`，各平台实现各自的硬件解码器。一期 SourceNode 直接调用 OpenCV，不经过此接口 | 二期实现                  |
+
 
 ### 5.2 核心模块说明
 
@@ -339,6 +369,7 @@ NodeBase (C++)                    # 提供: name, state, queues, stats, set_para
 ```
 
 **节点驱动模式差异**：
+
 - `SourceNode`：主动产生帧。重写 `source_worker_loop()`，不走 `process()` 接口。循环解码 → push 到 output_queue。
 - `ProcessNode`：被动消费帧。基类 `worker_loop()` 从 input_queue pop → 调用子类 `process(Frame&)` → push 到 output_queue。
 - `SinkNode`：被动消费帧，只读不写。基类统一提供 `enabled` 属性（默认 true），可通过 `set_param("enabled", false)` 运行时关闭/开启。MjpegSink 默认 `enabled=false`。
@@ -360,11 +391,13 @@ struct NodeStats {
 通过 `NodeBase::stats()` 方法获取，`GET /pipelines/{id}/nodes` 接口返回所有节点的 NodeStats。
 
 **DAG 拓扑支持**：
+
 - **支持合并（多对一）**：多个 SourceNode 的 output_queue 指向同一个下游节点的 input_queue。BoundedQueue 支持多生产者并发 push，Frame 通过 move 入队，零拷贝。典型场景：多路视频流 → 同一个 DetectorNode。
 - **不支持分叉（一对多）**：Frame 是 move-only 的，无法同时给多个下游。如需"预览 + 推理并行"，使用多条独立 Pipeline 共享模型（通过 ModelRegistry）。
 - `stream_id`（Frame 字段）区分多路视频帧来源，下游节点可据此做流级别的逻辑区分。
 
 **合并拓扑下的停止机制**：
+
 - Pipeline 追踪每个共享 input_queue 连接了哪些上游 Source
 - 只有当所有连接的 Source 都结束后，才 stop 该共享队列
 - 单个 Source 结束不会影响其他 Source 继续向同一队列 push
@@ -427,14 +460,16 @@ frame.image ──────►  读 image        读 image+         读 detec
 
 各节点读写约定：
 
-| 节点类型 | 读取字段 | 写入字段 | 说明 |
-|---|---|---|---|
-| `SourceNode` | — | `stream_id`, `frame_id`, `pts_us`, `image` | 解码后的原始帧 |
-| `DetectorNode` | `image` | `detections[]`（bbox, coarse class_id, confidence） | YOLOv8 检测，class_id 为模型原始类别 |
+
+| 节点类型             | 读取字段                    | 写入字段                                                 | 说明                                                            |
+| ---------------- | ----------------------- | ---------------------------------------------------- | ------------------------------------------------------------- |
+| `SourceNode`     | —                       | `stream_id`, `frame_id`, `pts_us`, `image`           | 解码后的原始帧                                                       |
+| `DetectorNode`   | `image`                 | `detections[]`（bbox, coarse class_id, confidence）    | YOLOv8 检测，class_id 为模型原始类别                                    |
 | `ClassifierNode` | `image`, `detections[]` | `detections[i].class_id`, `detections[i].confidence` | 对每个 detection 的 bbox crop 做细粒度分类，**覆盖** class_id 与 confidence |
-| `TrackerNode` | `detections[]` | `tracks[]`, `detections[i].track_id` | ByteTrack 关联，写入轨迹 ID |
-| `PyNode` | 任意字段 | `user_data["key"]` | Python 业务节点，结果按 key 挂载到 user_data map |
-| `SinkNode` | 任意字段 | — | 只读，不修改 Frame |
+| `TrackerNode`    | `detections[]`          | `tracks[]`, `detections[i].track_id`                 | ByteTrack 关联，写入轨迹 ID                                          |
+| `PyNode`         | 任意字段                    | `user_data["key"]`                                   | Python 业务节点，结果按 key 挂载到 user_data map                         |
+| `SinkNode`       | 任意字段                    | —                                                    | 只读，不修改 Frame                                                  |
+
 
 **禁止**：节点内不得替换整个 `frame.image`（会泄漏 GPU 内存）；不得拷贝 Frame（编译期已通过 `= delete` 阻止）。
 
@@ -490,11 +525,13 @@ struct Tensor {
 };
 ```
 
-| 内存类型 | `MemoryType` 枚举 | 分配器 | 典型用途 |
-|---|---|---|---|
-| CUDA 设备显存 | `CUDA_DEVICE` | `CudaAllocator` | 推理输入/输出 tensor，GPU 解码帧 |
-| CUDA Pinned 内存 | `CUDA_HOST` | `CudaPinnedAllocator` | H2D / D2H 中转，DMA 加速 |
-| CPU 普通内存 | `CPU` | `CpuAllocator`（256 字节对齐） | CPU 软解码帧，Python 侧数据 |
+
+| 内存类型           | `MemoryType` 枚举 | 分配器                      | 典型用途                   |
+| -------------- | --------------- | ------------------------ | ---------------------- |
+| CUDA 设备显存      | `CUDA_DEVICE`   | `CudaAllocator`          | 推理输入/输出 tensor，GPU 解码帧 |
+| CUDA Pinned 内存 | `CUDA_HOST`     | `CudaPinnedAllocator`    | H2D / D2H 中转，DMA 加速    |
+| CPU 普通内存       | `CPU`           | `CpuAllocator`（256 字节对齐） | CPU 软解码帧，Python 侧数据    |
+
 
 跨节点传递 Tensor 时通过 `std::move` 转移所有权，**不触发内存拷贝**。若下游节点需要 CPU 数据（如 Python 读取），由该节点自行调用 `cudaMemcpy` D2H，不由框架自动转换。
 
@@ -710,16 +747,19 @@ public:
 
 ### 6.1 阶段划分总览
 
-| 阶段 | 目标 | 周期 |
-| :--- | :--- | :--- |
-| Phase 0 | 工程骨架 + CI 基础 | 第 1-2 周 |
-| Phase 1 | C++ 核心调度框架 | 第 3-5 周 |
-| Phase 2 | NVIDIA 推理 + 编解码 | 第 6-9 周 |
+
+| 阶段      | 目标              | 周期        |
+| ------- | --------------- | --------- |
+| Phase 0 | 工程骨架 + CI 基础    | 第 1-2 周   |
+| Phase 1 | C++ 核心调度框架      | 第 3-5 周   |
+| Phase 2 | NVIDIA 推理 + 编解码 | 第 6-9 周   |
 | Phase 3 | Python 绑定 + DSL | 第 10-12 周 |
-| Phase 4 | 管理 API + 前端交付 | 第 13-15 周 |
-| Phase 5 | 集成验证 + 收尾 | 第 16-18 周 |
+| Phase 4 | 管理 API + 前端交付   | 第 13-15 周 |
+| Phase 5 | 集成验证 + 收尾       | 第 16-18 周 |
+
 
 ---
+
 #### Phase 0：工程骨架 + CI 基础（第 1-2 周）
 
 目的：建立可编译、可测试的项目骨架，CI 从第一天起运行。
@@ -765,7 +805,7 @@ public:
   - struct Classification（detection_index, class_id, confidence）
   - struct Track（track_id, class_id, bbox, age, confidence）
   - struct Tensor（shape, dtype, void* data, IAllocator*）
-  - class BoundedQueue<T>（DROP_OLDEST / DROP_NEWEST / BLOCK）
+  - class BoundedQueue（DROP_OLDEST / DROP_NEWEST / BLOCK）
   - struct QueueStats
 - 验收标准
   - BoundedQueue 单元测试全绿：入队/出队/DROP_OLDEST 溢出/BLOCK 阻塞-唤醒
@@ -840,6 +880,7 @@ public:
   ```
 
 ---
+
 #### Phase 1：C++ 核心调度框架（第 3-5 周）
 
 目的：实现节点图、调度器、Pipeline 生命周期。
@@ -1157,6 +1198,7 @@ public:
   ```
 
 ---
+
 #### Phase 2：NVIDIA 推理 + 编解码（第 6-9 周）
 
 目的：接入真实 GPU，完成 TRT 推理、`cv::cudacodec` GPU 硬解码 / CPU 软解码、YOLOv8/分类/分割验证。
@@ -1240,7 +1282,7 @@ public:
   - class DetectionDecoder（anchor-free NMS）
   - struct Detection（bbox, class_id, confidence）
 - 验收标准
-  - COCO val2017 subset（100张）mAP@0.5 ≥ 原始 PyTorch 结果 -1%
+  - COCO val2017 subset（100张）[mAP@0.5](mailto:mAP@0.5) ≥ 原始 PyTorch 结果 -1%
   - 单路 1080p ≥ 25 FPS
 - 测试方法
   - 集成测试 + benchmark 脚本
@@ -1291,6 +1333,7 @@ public:
   - 集成测试
 
 ---
+
 #### Phase 3：Python 绑定 + DSL（第 10-12 周）
 
 目的：Python 层可编排和运行完整 pipeline，用户能写自定义业务节点（独立进程，真并行）。
@@ -1300,11 +1343,13 @@ public:
 **3-A 绑定粒度**：绑定所有核心类 + PipelineBuilder、PipelineConfig、PipelineStats、NodeStats、QueueStats、AnnotatorNode、MockModelEngine。
 
 **3-B GIL 管理策略**：
+
 - `Pipeline.run()` / `stop()` 释放 GIL（`call_guard<gil_scoped_release>`）
 - PyNode C++ 回调时获取 GIL（`gil_scoped_acquire`）
 - Frame 传递给 Python 时用 `rv_policy::reference`（零拷贝引用）
 
 **3-C DSL 设计**：
+
 - `>>` 直接返回 Pipeline 对象（去掉 `.build()` 步骤）
 - 合并语法：`[src1, src2] >> det` 表示多 source 合并到同一下游
 - 公开 API：`run(block=False, **config)` + `stop()`
@@ -1314,6 +1359,7 @@ public:
 - PipelineConfig 通过 Pipeline 属性或 `run()` 参数传入
 
 **3-D CustomNode 子进程架构**：
+
 - 用户面向 `CustomNode` 基类，重写 `on_frame(frame: FrameView)`
 - `FrameView` 安全视图，process 结束后自动失效（防止悬垂引用）
 - 默认 `process_mode = "subprocess"`：每个 CustomNode 跑独立进程（独立 GIL，真并行）
@@ -1325,6 +1371,7 @@ public:
 - 子进程崩溃自动重启，不影响主 pipeline
 
 **3-E YAML 序列化**：
+
 - `pipeline.export_yaml(path)` / `Pipeline.load_yaml(path)`
 - CustomNode 序列化：记录 `module`、`class`、`process_mode`、用户自定义 config
 - `load_yaml` 可自动 import 模块、实例化 CustomNode
@@ -1337,12 +1384,12 @@ public:
   - python/bindings/bind_pipeline.cpp
   - python/bindings/bind_nodes.cpp
   - python/bindings/bind_frame.cpp
-  - python/visionpipe/__init__.py
+  - python/visionpipe/**init**.py
   - tests/unit/python/test_bindings.py
   - tests/unit/python/test_dsl.py
 - 实现的类/函数
   - 绑定：Pipeline、PipelineManager、Frame、Detection、Track、所有 Node 类型、Config 类型
-  - `>>` 运算符：`NodeBase.__rshift__` 直接返回 Pipeline（非 PipelineBuilder）
+  - `>>` 运算符：`NodeBase.__rshift_`_ 直接返回 Pipeline（非 PipelineBuilder）
   - 合并语法：`list.__rshift__` 或 Pipeline 接受 list 参数，`[src1, src2] >> det` 创建合并拓扑
   - `Pipeline.run(block=False, **config)`：统一入口，`block=False` 后台运行，`block=True` 阻塞
   - `Pipeline.stop(drain=True)`：优雅停止
@@ -1401,6 +1448,7 @@ public:
   - pytest，无 GPU（序列化逻辑不需要 GPU）
 
 ---
+
 #### Phase 4：管理 API + 前端交付（第 13-15 周）
 
 目的：完成 REST 管理 API（分离生命周期）、WebRTC 视频流、通用 WebSocket 控制通道、ROI 热更、结构化结果推送（独立 WS）、节点状态监控接口。
@@ -1475,12 +1523,13 @@ public:
   - class MjpegSink : public SinkNode — JPEG 编码 → multipart HTTP stream（/mjpeg/{pipeline_id}），默认 enabled=false
 - 验收标准
   - JsonResultSink 输出可被 json::parse 解析，字段完整
-  - MjpegSink 默认关闭，set_param("enabled", true) 后浏览器 <img> 标签可直接播放
+  - MjpegSink 默认关闭，set_param("enabled", true) 后浏览器  标签可直接播放
   - SinkNode enabled=false 时不消耗 CPU/GPU 资源（跳过处理）
 - 测试方法
   - 集成测试
 
 ---
+
 #### Phase 5：集成验证 + 收尾（第 16-18 周）
 
 目的：确保 Phase 0-4 每个环节功能正确、数据流完整、多 pipeline 互不干扰，文档和 demo 收尾。
@@ -1697,33 +1746,36 @@ public:
   - 基于 RTX 3060 12GB + WSL2 环境验证可运行
 
 ---
+
 ### 6.2 项目跟踪表
 
-| ID | 任务 | 阶段 | 优先级 | 状态 | 依赖 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| T0.1 | 目录结构与 CMake 配置 | P0 | P0 | [x] | — |
-| T0.2 | 基础数据结构 + 单元测试框架 | P0 | P0 | [x] | T0.1 |
-| T0.3 | 日志系统初始化 | P0 | P0 | [x] | T0.1 |
-| T1.1 | 节点基类与 DAG | P1 | P0 | [x] | T0.2 |
-| T1.2 | PipelineManager + 生命周期 | P1 | P0 | [x] | T1.1 |
-| T1.3 | ModelRegistry（Mock 引擎） | P1 | P0 | [x] | T0.2 |
-| T1.4 | parallel_workers 支持 | P1 | P0 | [x] | T1.1 |
-| T2.1 | HAL NVIDIA 实现（TRT） | P2 | P0 | [x] | T1.3 |
-| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2 | P0 | [x] | T1.1 |
-| T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期） | — | P1 | 未来扩展 | T2.2a | 移至「未来扩展」章节，不纳入正式排期 |
-| T2.3 | YOLOv8 检测节点 | P2 | P0 | [x] | T2.1、T2.2a |
-| T2.4 | 分类节点 + 帧内 batch | P2 | P0 | [x] | T2.1 |
-| T2.5 | 分割节点 + ByteTrack | P2 | P1 | [ ] | T2.1 |
-| T3.1 | nanobind 绑定核心类 + DSL 重构 | P3 | P0 | [x] | T2.3、T2.4 | |
-| T3.2 | CustomNode 子进程架构 | P3 | P0 | [x] | T3.1 | |
-| T3.3 | YAML 导出/导入 + CustomNode 支持 | P3 | P1 | [x] | T3.1 | |
-| T4.1 | 内嵌管理 REST API | P4 | P0 | [ ] | T3.1 | 需要：分离生命周期（create/start/stop/delete）+ 新增 GET /nodes 接口 + NodeStats 补齐 latency_ms/state |
-| T4.2 | WebRTC Sink | P4 | P0 | [ ] | T3.1 | 需要：继承 SinkNode（非 NodeBase） |
-| T4.3 | WebSocket 控制通道 + ROI 热更 | P4 | P0 | [ ] | T4.1、T4.2 | 需要：通用 set_param 消息转发（不仅 ROI） |
-| T4.4 | JsonResultSink + MjpegSink | P4 | P0 | [ ] | T3.1 | 需要：SinkNode 基类 + enabled 属性 + MjpegSink 默认关闭 + JsonResult 独立 WS |
-| T5.1 | 多 Pipeline 并发集成测试 | P5 | P0 | [ ] | T4.1 | 需 rework：修复测试资产路径 + 去掉 VRAM ≤10% 硬指标 |
-| T5.2 | 端到端验证测试（三层验证） | P5 | P0 | [ ] | T4.1、T4.3、T4.4 |
-| T5.3 | 文档与 Demo | P5 | P1 | [ ] | T5.1、T5.2 |
+
+| ID    | 任务                               | 阶段  | 优先级 | 状态   | 依赖             |
+| ----- | -------------------------------- | --- | --- | ---- | -------------- |
+| T0.1  | 目录结构与 CMake 配置                   | P0  | P0  | [x]  | —              |
+| T0.2  | 基础数据结构 + 单元测试框架                  | P0  | P0  | [x]  | T0.1           |
+| T0.3  | 日志系统初始化                          | P0  | P0  | [x]  | T0.1           |
+| T1.1  | 节点基类与 DAG                        | P1  | P0  | [x]  | T0.2           |
+| T1.2  | PipelineManager + 生命周期           | P1  | P0  | [x]  | T1.1           |
+| T1.3  | ModelRegistry（Mock 引擎）           | P1  | P0  | [x]  | T0.2           |
+| T1.4  | parallel_workers 支持              | P1  | P0  | [x]  | T1.1           |
+| T2.1  | HAL NVIDIA 实现（TRT）               | P2  | P0  | [x]  | T1.3           |
+| T2.2a | 视频源节点（`cv::cudacodec` GPU 硬解，一期） | P2  | P0  | [x]  | T1.1           |
+| T2.2b | ICodec HAL 抽象 + 跨平台编解码（二期）       | —   | P1  | 未来扩展 | T2.2a          |
+| T2.3  | YOLOv8 检测节点                      | P2  | P0  | [x]  | T2.1、T2.2a     |
+| T2.4  | 分类节点 + 帧内 batch                  | P2  | P0  | [x]  | T2.1           |
+| T2.5  | 分割节点 + ByteTrack                 | P2  | P1  | [x]  | T2.1           |
+| T3.1  | nanobind 绑定核心类 + DSL 重构          | P3  | P0  | [x]  | T2.3、T2.4      |
+| T3.2  | CustomNode 子进程架构                 | P3  | P0  | [x]  | T3.1           |
+| T3.3  | YAML 导出/导入 + CustomNode 支持       | P3  | P1  | [x]  | T3.1           |
+| T4.1  | 内嵌管理 REST API                    | P4  | P0  | [x]  | T3.1           |
+| T4.2  | WebRTC Sink                      | P4  | P0  | [ ]  | T3.1           |
+| T4.3  | WebSocket 控制通道 + ROI 热更          | P4  | P0  | [ ]  | T4.1、T4.2      |
+| T4.4  | JsonResultSink + MjpegSink       | P4  | P0  | [ ]  | T3.1           |
+| T5.1  | 多 Pipeline 并发集成测试                | P5  | P0  | [ ]  | T4.1           |
+| T5.2  | 端到端验证测试（三层验证）                    | P5  | P0  | [ ]  | T4.1、T4.3、T4.4 |
+| T5.3  | 文档与 Demo                         | P5  | P1  | [ ]  | T5.1、T5.2      |
+
 
 ---
 
@@ -1742,6 +1794,7 @@ public:
 #### 性能 benchmark + 专项调优
 
 待功能全链路验证通过后，独立做性能评测（参见 Section 4.4 参考指标），包括：
+
 - 吞吐量 benchmark（单路 / 多路）
 - 延迟 profiling（节点级 latency 分析）
 - 显存优化（模型共享效率、Tensor 内存池）
@@ -1755,14 +1808,16 @@ public:
 
 #### C++ 层
 
-| 错误类型 | 处理方式 | 示例 |
-|----------|----------|------|
-| 可恢复的业务错误 | 返回 `std::optional` 或 `Result<T>` | `pop()` 返回空 |
-| 配置/参数错误 | 抛出自定义异常 | `ConfigError` |
-| GPU/CUDA 错误 | 抛出 `CudaError`，携带错误码 | `cudaMalloc` 失败 |
-| 模型加载错误 | 抛出 `ModelLoadError` | engine 文件损坏 |
-| 推理错误 | 抛出 `InferError` | 输入 shape 不匹配 |
-| 视频流错误 | 抛出 `StreamError`，携带 URI | 拉流失败超过重试次数 |
+
+| 错误类型        | 处理方式                             | 示例              |
+| ----------- | -------------------------------- | --------------- |
+| 可恢复的业务错误    | 返回 `std::optional` 或 `Result<T>` | `pop()` 返回空     |
+| 配置/参数错误     | 抛出自定义异常                          | `ConfigError`   |
+| GPU/CUDA 错误 | 抛出 `CudaError`，携带错误码             | `cudaMalloc` 失败 |
+| 模型加载错误      | 抛出 `ModelLoadError`              | engine 文件损坏     |
+| 推理错误        | 抛出 `InferError`                  | 输入 shape 不匹配    |
+| 视频流错误       | 抛出 `StreamError`，携带 URI          | 拉流失败超过重试次数      |
+
 
 **异常基类层次**：
 
@@ -1809,14 +1864,16 @@ nb::exception<ConfigError>(m, "ConfigError", visionpipe_error);
 
 #### 日志级别
 
-| 级别 | 使用场景 | 示例 |
-|------|----------|------|
-| TRACE | 详细调试信息，生产环境关闭 | 每帧处理时间戳 |
-| DEBUG | 开发调试信息 | 节点队列状态变化 |
-| INFO | 正常运行事件 | Pipeline 启动/停止、模型加载 |
-| WARN | 可恢复的异常情况 | 队列积压、帧丢帧 |
-| ERROR | 错误但进程可继续 | 单节点异常、GPU OOM 缓解 |
-| CRITICAL | 进程级故障 | 无法恢复的错误 |
+
+| 级别       | 使用场景          | 示例                  |
+| -------- | ------------- | ------------------- |
+| TRACE    | 详细调试信息，生产环境关闭 | 每帧处理时间戳             |
+| DEBUG    | 开发调试信息        | 节点队列状态变化            |
+| INFO     | 正常运行事件        | Pipeline 启动/停止、模型加载 |
+| WARN     | 可恢复的异常情况      | 队列积压、帧丢帧            |
+| ERROR    | 错误但进程可继续      | 单节点异常、GPU OOM 缓解    |
+| CRITICAL | 进程级故障         | 无法恢复的错误             |
+
 
 #### 必须记录日志的操作
 

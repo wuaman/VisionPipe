@@ -2,16 +2,18 @@
 
 ### 0.1 必需依赖
 
-| 组件 | 版本要求 | 验证命令 |
-|------|----------|----------|
-| CUDA Toolkit | >=11.8 | `nvcc --version` |
-| cuDNN | >=8.6 | `cat /usr/local/cuda/include/cudnn_version.h` |
-| TensorRT | >=8.6 | `trtexec --version` |
-| Python | >=3.10 | `python3 --version` |
-| CMake | >=3.20 | `cmake --version` |
-| GCC | >=9.0 | `g++ --version` |
-| uv | 最新版 | `uv --version` |
-| clang-format | >=14 | `clang-format --version` |
+
+| 组件           | 版本要求   | 验证命令                                          |
+| ------------ | ------ | --------------------------------------------- |
+| CUDA Toolkit | >=11.8 | `nvcc --version`                              |
+| cuDNN        | >=8.6  | `cat /usr/local/cuda/include/cudnn_version.h` |
+| TensorRT     | >=8.6  | `trtexec --version`                           |
+| Python       | >=3.10 | `python3 --version`                           |
+| CMake        | >=3.20 | `cmake --version`                             |
+| GCC          | >=9.0  | `g++ --version`                               |
+| uv           | 最新版    | `uv --version`                                |
+| clang-format | >=14   | `clang-format --version`                      |
+
 
 ### 0.2 环境配置
 
@@ -32,10 +34,12 @@ uv pip install -e ".[dev]"
 
 采用 **系统包管理器 + CMake FetchContent** 混合方案：
 
-| 依赖类型 | 管理方式 | 示例 |
-|----------|----------|------|
-| 重依赖（CUDA、TensorRT、OpenCV） | 系统包管理器或源码编译 | OpenCV 需源码编译，开启 `-DWITH_CUDA=ON -DWITH_NVCUVID=ON`（系统 `libopencv-dev` 通常不含 CUDA 模块） |
-| 轻依赖（spdlog、nlohmann-json、googletest、nanobind） | CMake FetchContent | 自动下载到 `build/_deps/` |
+
+| 依赖类型                                          | 管理方式               | 示例                                                                                  |
+| --------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------- |
+| 重依赖（CUDA、TensorRT、OpenCV）                     | 系统包管理器或源码编译        | OpenCV 需源码编译，开启 `-DWITH_CUDA=ON -DWITH_NVCUVID=ON`（系统 `libopencv-dev` 通常不含 CUDA 模块） |
+| 轻依赖（spdlog、nlohmann-json、googletest、nanobind） | CMake FetchContent | 自动下载到 `build/_deps/`                                                                |
+
 
 ### 0.3 GPU 环境要求
 
@@ -48,10 +52,12 @@ uv pip install -e ".[dev]"
 
 ### 0.4 代码风格
 
-| 语言 | 工具 | 配置文件 |
-|------|------|----------|
-| C++ | clang-format | `.clang-format`（基于 Google 风格） |
-| Python | ruff + mypy | `pyproject.toml` |
+
+| 语言     | 工具           | 配置文件                          |
+| ------ | ------------ | ----------------------------- |
+| C++    | clang-format | `.clang-format`（基于 Google 风格） |
+| Python | ruff + mypy  | `pyproject.toml`              |
+
 
 ```bash
 # 格式化检查（提交前运行）
@@ -62,12 +68,14 @@ uv run mypy python/
 
 ### 0.5 测试数据
 
-| 资源 | 路径 | 说明 |
-|------|------|------|
-| YOLOv8 ONNX | `models/yolov8/yolov8n.onnx` | Ultralytics 官方下载 |
-| YOLOv8 TRT Engine | `models/yolov8/yolov8n.engine` | 由 `convert.sh` 生成，不纳入 git |
-| 测试视频 | `tests/data/sample_100frames.mp4` | 1080p H.264，100 帧 |
-| COCO 子集 | `tests/data/coco_val_subset/` | 100 张验证集图片 |
+
+| 资源                | 路径                                | 说明                        |
+| ----------------- | --------------------------------- | ------------------------- |
+| YOLOv8 ONNX       | `models/yolov8/yolov8n.onnx`      | Ultralytics 官方下载          |
+| YOLOv8 TRT Engine | `models/yolov8/yolov8n.engine`    | 由 `convert.sh` 生成，不纳入 git |
+| 测试视频              | `tests/data/sample_100frames.mp4` | 1080p H.264，100 帧         |
+| COCO 子集           | `tests/data/coco_val_subset/`     | 100 张验证集图片                |
+
 
 资源获取脚本：`tests/data/download_test_assets.sh`（首次构建时自动运行）
 

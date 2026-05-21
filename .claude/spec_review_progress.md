@@ -72,15 +72,15 @@ Next phase: (all phases confirmed)
 - **SinkNode 基类** → 统一提供 `enabled` 属性（默认 true），MjpegSink 覆盖为 false
 
 #### 代码验证结果
-- 管理 REST API (aiohttp)：基础实现存在，但缺少分离生命周期（start/stop 独立端点）和 nodes 接口
+- 管理 REST API (aiohttp)：已修复 ✓ — 分离生命周期（POST start/stop 独立端点）+ GET /nodes 接口已实现
 - WebRTC Sink (libdatachannel + NVENC)：匹配 ✓
 - WebSocket 控制通道：**部分匹配** — 只处理 ROI，未支持通用 set_param 转发
 - JsonResultSink：匹配 ✓（独立 BoundedQueue）
 - MjpegSink：**部分匹配** — 功能实现但无 enabled 开关
-- NodeStats：**部分匹配** — 有 fps/processed_count/error_count，缺 latency_ms 和 state
+- NodeStats：已修复 ✓ — latency_ms (EMA α=0.1) 和 state (NodeState 枚举) 已补齐
 - SinkNode 基类：**不匹配** — 无独立基类，Sink 节点直接继承 NodeBase + is_sink()
 - Pipeline 生命周期分离 (create/start/stop/destroy)：匹配 ✓
-- T4.1/T4.2/T4.3/T4.4 全部标记为未完成（需 rework 以匹配规范）
+- T4.1 已完成；T4.2/T4.3/T4.4 仍标记为未完成
 
 ### Phase 5: 集成验证 + 收尾（已确认）
 - **Phase 5 重新定位** → 从"集成测试 + 性能调优"改为"集成验证 + 收尾"，聚焦功能正确性而非性能指标

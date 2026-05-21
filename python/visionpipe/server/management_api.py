@@ -2,10 +2,13 @@
 
 Endpoints
 ---------
-POST   /pipelines                    Create and start a pipeline from YAML/JSON spec
+POST   /pipelines                    Create a pipeline from YAML/JSON spec (CREATED state)
 GET    /pipelines                    List all pipeline IDs and states
-DELETE /pipelines/{id}               Stop and destroy a pipeline
+POST   /pipelines/{id}/start         Start a pipeline
+POST   /pipelines/{id}/stop          Stop a pipeline
+DELETE /pipelines/{id}               Destroy a pipeline (must be stopped first)
 GET    /pipelines/{id}/health        Return per-node QueueStats + FPS
+GET    /pipelines/{id}/nodes         Return per-node NodeStats (fps, latency, state)
 POST   /pipelines/{id}/params        Set a runtime param on a node
 GET    /mjpeg/{id}                   MJPEG multipart stream from MjpegSink node
 GET    /ws/{id}/results              WebSocket stream of per-frame JSON from JsonResultSink node
@@ -27,6 +30,7 @@ from visionpipe.server.schemas import (
     CreatePipelineRequest,
     ErrorResponse,
     NodeHealthSchema,
+    NodeStatsSchema,
     PipelineHealthResponse,
     PipelineInfo,
     QueueStatsSchema,
@@ -85,8 +89,11 @@ class ManagementServer:
     def _setup_routes(self) -> None:
         self._app.router.add_post("/pipelines", self._post_pipelines)
         self._app.router.add_get("/pipelines", self._get_pipelines)
+        self._app.router.add_post("/pipelines/{id}/start", self._post_start)
+        self._app.router.add_post("/pipelines/{id}/stop", self._post_stop)
         self._app.router.add_delete("/pipelines/{id}", self._delete_pipeline)
         self._app.router.add_get("/pipelines/{id}/health", self._get_health)
+        self._app.router.add_get("/pipelines/{id}/nodes", self._get_nodes)
         self._app.router.add_post("/pipelines/{id}/params", self._post_params)
         self._app.router.add_get("/mjpeg/{id}", self._get_mjpeg)
         self._app.router.add_get("/ws/{id}/results", self._ws_results)
@@ -141,12 +148,12 @@ class ManagementServer:
             return _err(f"Schema validation error: {exc}", 422)
 
         try:
-            pipeline = await asyncio.get_event_loop().run_in_executor(None, self._build_and_register, spec)
+            pipeline_id = await asyncio.get_event_loop().run_in_executor(None, self._build_and_register, spec)
         except Exception as exc:
             logger.exception("Failed to create pipeline")
             return _err(str(exc), 500)
 
-        return _json({"id": pipeline}, status=201)
+        return _json({"id": pipeline_id}, status=201)
 
     async def _get_pipelines(self, request: web.Request) -> web.Response:
         ids: list[str] = self._manager.list()
@@ -160,11 +167,39 @@ class ManagementServer:
     async def _delete_pipeline(self, request: web.Request) -> web.Response:
         pid = request.match_info["id"]
         try:
-            await asyncio.get_event_loop().run_in_executor(None, self._stop_and_destroy, pid)
+            status = self._manager.status(pid)
         except Exception as exc:
-            status = 404 if "not found" in str(exc).lower() else 500
-            return _err(str(exc), status)
+            return _err(str(exc), 404)
+
+        if status.name not in ("STOPPED", "INIT"):
+            return _err(
+                f"Pipeline '{pid}' is in state {status.name}; stop it before deleting",
+                409,
+            )
+
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, self._manager.destroy, pid)
+        except Exception as exc:
+            return _err(str(exc), 500)
         return web.Response(status=204)
+
+    async def _post_start(self, request: web.Request) -> web.Response:
+        pid = request.match_info["id"]
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, self._manager.start, pid)
+        except Exception as exc:
+            status_code = 404 if "not found" in str(exc).lower() else 409
+            return _err(str(exc), status_code)
+        return _json({"id": pid, "state": "RUNNING"})
+
+    async def _post_stop(self, request: web.Request) -> web.Response:
+        pid = request.match_info["id"]
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, self._manager.stop, pid)
+        except Exception as exc:
+            status_code = 404 if "not found" in str(exc).lower() else 409
+            return _err(str(exc), status_code)
+        return _json({"id": pid, "state": "STOPPED"})
 
     async def _get_health(self, request: web.Request) -> web.Response:
         pid = request.match_info["id"]
@@ -201,6 +236,38 @@ class ManagementServer:
             nodes=node_health,
         )
         return _json(resp.model_dump())
+
+    async def _get_nodes(self, request: web.Request) -> web.Response:
+        import visionpipe
+
+        pid = request.match_info["id"]
+        try:
+            pipeline = self._manager.get(pid)
+        except Exception as exc:
+            return _err(str(exc), 404)
+
+        result = []
+        for node_name, node in pipeline.nodes().items():
+            ns = node.stats()
+            qs = ns.input_queue_stats
+            result.append(
+                NodeStatsSchema(
+                    name=node_name,
+                    fps=ns.fps,
+                    latency_ms=ns.latency_ms,
+                    frames_processed=ns.processed_count,
+                    errors=ns.error_count,
+                    state=visionpipe.NodeState(ns.state).name,
+                    input_queue=QueueStatsSchema(
+                        capacity=qs.capacity,
+                        current_size=qs.current_size,
+                        total_pushed=qs.total_pushed,
+                        total_popped=qs.total_popped,
+                        dropped_count=qs.dropped_count,
+                    ),
+                ).model_dump()
+            )
+        return _json(result)
 
     async def _get_mjpeg(self, request: web.Request) -> web.StreamResponse:
         import visionpipe
@@ -367,7 +434,7 @@ class ManagementServer:
                 cfg.decode_mode = visionpipe.DecodeMode[mode_str]
                 cfg.gpu_device = p.get("gpu_device", 0)
                 cfg.queue_capacity = p.get("queue_capacity", 16)
-                cfg.stream_id = p.get("stream_id", ns.name)
+                cfg.stream_id = p.get("stream_id", 0)
                 node_map[ns.name] = visionpipe.FileSource(cfg)
             elif ns.type == "rtsp_source":
                 cfg = visionpipe.SourceConfig()
@@ -376,7 +443,7 @@ class ManagementServer:
                 cfg.decode_mode = visionpipe.DecodeMode[mode_str]
                 cfg.gpu_device = p.get("gpu_device", 0)
                 cfg.queue_capacity = p.get("queue_capacity", 16)
-                cfg.stream_id = p.get("stream_id", ns.name)
+                cfg.stream_id = p.get("stream_id", 0)
                 node_map[ns.name] = visionpipe.RtspSource(cfg)
             elif ns.type == "detector":
                 engine_path = p.get("engine_path")
@@ -463,21 +530,4 @@ class ManagementServer:
             pipeline.connect(node_map[edge.from_node], node_map[edge.to_node])
 
         pipeline_id: str = self._manager.create_pipeline(pipeline)
-        # Only start if there is at least one real source node (FileSource/RtspSource).
-        # Pipelines without a source node will be started on first real frame arrival
-        # or left in INIT state for manual lifecycle control.
-        has_real_source = any(ns.type in ("file_source", "rtsp_source") for ns in spec.nodes)
-        if has_real_source:
-            self._manager.start(pipeline_id)
         return pipeline_id
-
-    def _stop_and_destroy(self, pipeline_id: str) -> None:
-        import visionpipe
-
-        try:
-            status = self._manager.status(pipeline_id)
-            if status.name not in ("STOPPED", "ERROR", "INIT"):
-                self._manager.stop(pipeline_id)
-        except visionpipe.NotFoundError:
-            raise
-        self._manager.destroy(pipeline_id)

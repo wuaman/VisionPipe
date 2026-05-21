@@ -114,6 +114,8 @@ void bind_frame(nb::module_& m) {
         .def_rw("processed_count", &NodeStats::processed_count)
         .def_rw("error_count", &NodeStats::error_count)
         .def_rw("fps", &NodeStats::fps)
+        .def_rw("latency_ms", &NodeStats::latency_ms)
+        .def_rw("state", &NodeStats::state)
         .def_rw("input_queue_stats", &NodeStats::input_queue_stats);
 
     nb::class_<PipelineConfig>(m, "PipelineConfig")

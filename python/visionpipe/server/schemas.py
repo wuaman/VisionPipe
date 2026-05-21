@@ -56,3 +56,13 @@ class SetParamResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: str
+
+
+class NodeStatsSchema(BaseModel):
+    name: str
+    fps: float
+    latency_ms: float
+    frames_processed: int
+    errors: int
+    state: str
+    input_queue: QueueStatsSchema

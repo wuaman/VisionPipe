@@ -27,7 +27,8 @@ NodeBase::NodeBase(NodeBase&& other) noexcept
     , params_(std::move(other.params_))
     , last_frame_time_(other.last_frame_time_.load())
     , frames_since_last_fps_(other.frames_since_last_fps_.load())
-    , current_fps_(other.current_fps_.load()) {
+    , current_fps_(other.current_fps_.load())
+    , current_latency_ms_(other.current_latency_ms_.load()) {
     other.input_queue_ = nullptr;
 }
 
@@ -46,6 +47,7 @@ NodeBase& NodeBase::operator=(NodeBase&& other) noexcept {
         last_frame_time_ = other.last_frame_time_.load();
         frames_since_last_fps_ = other.frames_since_last_fps_.load();
         current_fps_ = other.current_fps_.load();
+        current_latency_ms_ = other.current_latency_ms_.load();
         other.input_queue_ = nullptr;
     }
     return *this;
@@ -162,8 +164,16 @@ void NodeBase::worker_loop() {
 
 bool NodeBase::process_frame(Frame& frame) {
     try {
+        auto t0 = std::chrono::steady_clock::now();
         process(frame);
+        auto t1 = std::chrono::steady_clock::now();
         ++processed_count_;
+
+        double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        // EMA α=0.1
+        double prev = current_latency_ms_.load(std::memory_order_relaxed);
+        current_latency_ms_.store(prev == 0.0 ? ms : prev * 0.9 + ms * 0.1,
+                                  std::memory_order_relaxed);
 
         // 更新帧率：记录窗口起始时间，每 10 帧计算一次
         auto now = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -204,6 +214,8 @@ NodeStats NodeBase::stats() const {
     s.processed_count = processed_count_.load();
     s.error_count = error_count_.load();
     s.fps = current_fps_.load();
+    s.latency_ms = current_latency_ms_.load(std::memory_order_relaxed);
+    s.state = state_.load();
     if (input_queue_) {
         s.input_queue_stats = input_queue_->stats();
     }
