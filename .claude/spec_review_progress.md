@@ -76,11 +76,11 @@ Next phase: (all phases confirmed)
 - WebRTC Sink (libdatachannel + NVENC)：匹配 ✓
 - WebSocket 控制通道：**部分匹配** — 只处理 ROI，未支持通用 set_param 转发
 - JsonResultSink：匹配 ✓（独立 BoundedQueue）
-- MjpegSink：**部分匹配** — 功能实现但无 enabled 开关
+- MjpegSink：已修复 ✓ — enabled 开关已通过 SinkNode 基类实现，默认 enabled=false
 - NodeStats：已修复 ✓ — latency_ms (EMA α=0.1) 和 state (NodeState 枚举) 已补齐
-- SinkNode 基类：**不匹配** — 无独立基类，Sink 节点直接继承 NodeBase + is_sink()
+- SinkNode 基类：已修复 ✓ — SinkNode : NodeBase 中间基类，统一 enabled 属性，三个 Sink 均已迁移
 - Pipeline 生命周期分离 (create/start/stop/destroy)：匹配 ✓
-- T4.1 已完成；T4.2/T4.3/T4.4 仍标记为未完成
+- T4.1 已完成；T4.4 已完成；T4.2/T4.3 仍标记为未完成
 
 ### Phase 5: 集成验证 + 收尾（已确认）
 - **Phase 5 重新定位** → 从"集成测试 + 性能调优"改为"集成验证 + 收尾"，聚焦功能正确性而非性能指标

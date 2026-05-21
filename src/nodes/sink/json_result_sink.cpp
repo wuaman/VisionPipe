@@ -8,12 +8,14 @@ namespace visionpipe {
 
 JsonResultSink::JsonResultSink(const JsonResultSinkConfig& config,
                                const std::string& name)
-    : NodeBase(name)
+    : SinkNode(name)
     , config_(config)
     , json_queue_(std::make_shared<BoundedQueue<std::string>>(
           config.buffer_capacity, OverflowPolicy::DROP_OLDEST)) {}
 
 void JsonResultSink::process(Frame& frame) {
+    if (!enabled()) return;
+
     nlohmann::json j;
     j["stream_id"] = frame.stream_id;
     j["frame_id"] = frame.frame_id;

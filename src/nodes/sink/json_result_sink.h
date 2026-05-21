@@ -6,7 +6,7 @@
 #include <string>
 
 #include "core/bounded_queue.h"
-#include "core/node_base.h"
+#include "nodes/sink/sink_node.h"
 
 namespace visionpipe {
 
@@ -16,11 +16,7 @@ struct JsonResultSinkConfig {
     bool include_tracks = true;
 };
 
-/// Sink node that serializes per-frame detections/tracks to JSON.
-///
-/// Call pop_json() from the Python layer to drain JSON strings and
-/// forward them to WebSocket clients.
-class JsonResultSink : public NodeBase {
+class JsonResultSink : public SinkNode {
 public:
     explicit JsonResultSink(const JsonResultSinkConfig& config = JsonResultSinkConfig(),
                             const std::string& name = "json_result_sink");
@@ -33,10 +29,6 @@ public:
 
     void process(Frame& frame) override;
 
-    bool is_sink() const override { return true; }
-
-    /// Drain one JSON string from the internal buffer.
-    /// Returns nullopt on timeout or after stop().
     std::optional<std::string> pop_json(
         std::chrono::milliseconds timeout = std::chrono::milliseconds(500));
 

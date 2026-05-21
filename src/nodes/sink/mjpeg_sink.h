@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "core/bounded_queue.h"
-#include "core/node_base.h"
+#include "nodes/sink/sink_node.h"
 
 namespace visionpipe {
 
@@ -21,7 +21,7 @@ struct MjpegSinkConfig {
 ///
 /// Call pop_jpeg() from the Python layer to get the latest JPEG buffer
 /// and serve it as a multipart HTTP stream (/mjpeg/{pipeline_id}).
-class MjpegSink : public NodeBase {
+class MjpegSink : public SinkNode {
 public:
     explicit MjpegSink(const MjpegSinkConfig& config = MjpegSinkConfig(),
                        const std::string& name = "mjpeg_sink");
@@ -33,8 +33,6 @@ public:
     MjpegSink& operator=(MjpegSink&&) noexcept = default;
 
     void process(Frame& frame) override;
-
-    bool is_sink() const override { return true; }
 
     /// Drain one JPEG frame from the internal buffer.
     /// Returns nullopt on timeout or after stop().

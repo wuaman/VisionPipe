@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "core/node_base.h"
+#include "nodes/sink/sink_node.h"
 
 namespace visionpipe {
 
@@ -30,7 +30,7 @@ struct WebRTCSinkConfig {
 /// Compiled-in only when VISIONPIPE_USE_WEBRTC is defined (CMake option).
 /// Without it the sink compiles to no-ops so the rest of the project builds
 /// without libdatachannel or FFmpeg.
-class WebRTCSink : public NodeBase {
+class WebRTCSink : public SinkNode {
 public:
     explicit WebRTCSink(const WebRTCSinkConfig& config = WebRTCSinkConfig(),
                         const std::string& name = "webrtc_sink");
@@ -40,7 +40,6 @@ public:
     WebRTCSink& operator=(const WebRTCSink&) = delete;
 
     void process(Frame& frame) override;
-    bool is_sink() const override { return true; }
 
     /// Allocate a new WebRTC peer connection; returns an opaque peer ID.
     std::string create_peer();

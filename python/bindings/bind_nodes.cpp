@@ -12,6 +12,7 @@
 #include "core/frame.h"
 #include "core/node_base.h"
 #include "core/source_node.h"
+#include "nodes/sink/sink_node.h"
 #include "hal/imodel_engine.h"
 #include "hal/nvidia/trt_model_engine.h"
 #include "nodes/source/file_source.h"
@@ -62,6 +63,10 @@ void bind_nodes(nb::module_& m) {
         }, nb::arg("timeout_ms") = 500);
 
     nb::class_<SourceNode, NodeBase>(m, "SourceNode");
+
+    nb::class_<SinkNode, NodeBase>(m, "SinkNode")
+        .def("enabled", &SinkNode::enabled)
+        .def("set_enabled", &SinkNode::set_enabled, nb::arg("v"));
 
     nb::class_<FileSource, SourceNode>(m, "FileSource")
         .def(nb::init<const SourceConfig&>(), nb::arg("config"))
@@ -136,7 +141,7 @@ void bind_nodes(nb::module_& m) {
         .def_rw("include_detections", &JsonResultSinkConfig::include_detections)
         .def_rw("include_tracks", &JsonResultSinkConfig::include_tracks);
 
-    nb::class_<JsonResultSink, NodeBase>(m, "JsonResultSink")
+    nb::class_<JsonResultSink, SinkNode>(m, "JsonResultSink")
         .def(nb::init<const JsonResultSinkConfig&, const std::string&>(),
              nb::arg("config") = JsonResultSinkConfig(),
              nb::arg("name") = "json_result_sink")
@@ -152,7 +157,7 @@ void bind_nodes(nb::module_& m) {
         .def_rw("jpeg_quality", &MjpegSinkConfig::jpeg_quality)
         .def_rw("buffer_capacity", &MjpegSinkConfig::buffer_capacity);
 
-    nb::class_<MjpegSink, NodeBase>(m, "MjpegSink")
+    nb::class_<MjpegSink, SinkNode>(m, "MjpegSink")
         .def(nb::init<const MjpegSinkConfig&, const std::string&>(),
              nb::arg("config") = MjpegSinkConfig(),
              nb::arg("name") = "mjpeg_sink")
@@ -186,7 +191,7 @@ void bind_nodes(nb::module_& m) {
         .def_rw("stun_server", &WebRTCSinkConfig::stun_server)
         .def_rw("use_nvenc", &WebRTCSinkConfig::use_nvenc);
 
-    nb::class_<WebRTCSink, NodeBase>(m, "WebRTCSink")
+    nb::class_<WebRTCSink, SinkNode>(m, "WebRTCSink")
         .def(nb::init<const WebRTCSinkConfig&, const std::string&>(),
              nb::arg("config") = WebRTCSinkConfig(),
              nb::arg("name") = "webrtc_sink")

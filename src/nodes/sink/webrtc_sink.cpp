@@ -191,7 +191,7 @@ struct WebRTCSink::Impl {
 // ---------------------------------------------------------------------------
 
 WebRTCSink::WebRTCSink(const WebRTCSinkConfig& config, const std::string& name)
-    : NodeBase(name), config_(config), impl_(std::make_unique<Impl>()) {
+    : SinkNode(name), config_(config), impl_(std::make_unique<Impl>()) {
     impl_->config = config;
 }
 
@@ -317,6 +317,7 @@ int WebRTCSink::peer_count() const {
 }
 
 void WebRTCSink::process(Frame& frame) {
+    if (!enabled()) return;
     if (!frame.has_image()) return;
 
     {
@@ -385,7 +386,7 @@ namespace visionpipe {
 struct WebRTCSink::Impl {};
 
 WebRTCSink::WebRTCSink(const WebRTCSinkConfig& config, const std::string& name)
-    : NodeBase(name), config_(config), impl_(std::make_unique<Impl>()) {
+    : SinkNode(name), config_(config), impl_(std::make_unique<Impl>()) {
     VP_LOG_WARN("WebRTCSink '{}': built without VISIONPIPE_USE_WEBRTC; all methods are no-ops", name);
 }
 

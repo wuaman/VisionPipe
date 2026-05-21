@@ -5,6 +5,7 @@ set(VISIONPIPE_NODES_SOURCES
     source/file_source.cpp
     source/rtsp_source.cpp
     tracker/bytetrack_node.cpp
+    sink/sink_node.cpp
     sink/json_result_sink.cpp
     sink/mjpeg_sink.cpp
     sink/webrtc_sink.cpp  # always compiled; #ifdef inside switches real vs stub

@@ -66,6 +66,7 @@ MockModelEngine = _ext.MockModelEngine
 TrtModelEngine = _ext.TrtModelEngine
 NodeBase = _ext.NodeBase
 SourceNode = _ext.SourceNode
+SinkNode = _ext.SinkNode
 _PyNodeCpp = _ext.PyNode
 FileSource = _ext.FileSource
 RtspSource = _ext.RtspSource
@@ -191,6 +192,7 @@ __all__ = [
     "TrtModelEngine",
     "NodeBase",
     "SourceNode",
+    "SinkNode",
     "FileSource",
     "RtspSource",
     "ByteTrackNode",

@@ -15,12 +15,14 @@
 namespace visionpipe {
 
 MjpegSink::MjpegSink(const MjpegSinkConfig& config, const std::string& name)
-    : NodeBase(name)
+    : SinkNode(name, false)
     , config_(config)
     , jpeg_queue_(std::make_shared<BoundedQueue<std::vector<uint8_t>>>(
           config.buffer_capacity, OverflowPolicy::DROP_OLDEST)) {}
 
 void MjpegSink::process(Frame& frame) {
+    if (!enabled()) return;
+
     if (!frame.has_image()) {
         return;
     }

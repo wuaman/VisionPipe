@@ -293,6 +293,7 @@ protected:
     void SetUp() override {
         cfg = MjpegSinkConfig{};
         sink = std::make_unique<MjpegSink>(cfg, "test_mjpeg_sink");
+        sink->set_enabled(true);
     }
 
     static bool is_valid_jpeg(const std::vector<uint8_t>& buf) {
@@ -364,6 +365,7 @@ TEST_F(MjpegSinkTest, LowerQuality_SmallerFileSize) {
     MjpegSinkConfig high_cfg;
     high_cfg.jpeg_quality = 95;
     MjpegSink high_sink(high_cfg, "high_q");
+    high_sink.set_enabled(true);
     high_sink.process(f1);
     auto high_opt = high_sink.pop_jpeg(100ms);
     ASSERT_TRUE(high_opt.has_value());
@@ -371,6 +373,7 @@ TEST_F(MjpegSinkTest, LowerQuality_SmallerFileSize) {
     MjpegSinkConfig low_cfg;
     low_cfg.jpeg_quality = 10;
     MjpegSink low_sink(low_cfg, "low_q");
+    low_sink.set_enabled(true);
     low_sink.process(f2);
     auto low_opt = low_sink.pop_jpeg(100ms);
     ASSERT_TRUE(low_opt.has_value());
@@ -381,6 +384,7 @@ TEST_F(MjpegSinkTest, LowerQuality_SmallerFileSize) {
 TEST_F(MjpegSinkTest, BufferOverflow_DropsOldest) {
     cfg.buffer_capacity = 2;
     sink = std::make_unique<MjpegSink>(cfg, "test_mjpeg_overflow");
+    sink->set_enabled(true);
 
     for (int i = 0; i < 5; ++i) {
         Frame f = make_rgb_frame(32, 32);
@@ -398,6 +402,7 @@ TEST_F(MjpegSinkTest, BufferOverflow_DropsOldest) {
 TEST_F(MjpegSinkTest, MultipleFrames_AllValidJpeg) {
     cfg.buffer_capacity = 5;
     sink = std::make_unique<MjpegSink>(cfg, "test_mjpeg_multi");
+    sink->set_enabled(true);
     for (int i = 0; i < 5; ++i) {
         Frame f = make_rgb_frame(32, 32);
         sink->process(f);
