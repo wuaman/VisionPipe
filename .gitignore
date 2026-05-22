@@ -29,6 +29,9 @@ models/**/*.engine
 tests/data/*.mp4
 tests/data/coco_val_subset/
 
+# Test models (locally generated/symlinked, not tracked)
+tests/models/
+
 # IDE
 .vscode/
 .idea/
@@ -46,3 +49,5 @@ coverage.xml
 
 # Logs
 *.log
+
+.codex
