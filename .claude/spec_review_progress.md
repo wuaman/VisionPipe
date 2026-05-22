@@ -91,6 +91,7 @@ Next phase: (all phases confirmed)
 
 #### 代码验证结果
 - T5.1（标记 [x]）：test_multi_pipeline.py 已 rework — 修正测试资产路径 (48-3.mp4, tests/models/) + 重写 shared-engine 测试为功能性生命周期隔离 + 修复 Pipeline::connect 对 InferNode 自有 input_queue 的处理。3 个测试全部通过 ✓
+- T5.2（标记 [x]）：三层端到端验证已完成 ✓ — tests/e2e/test_e2e_validation.py，11 个测试 9 通过 + 2 跳过（无 classifier engine / 无 annotator deps）。补齐两个 nanobind 绑定缺口：(1) NodeBase.set_param 暴露（T4.3 测试仅使用 mock 节点，未触发真实节点路径）；(2) NodeBase.input_queue_id/output_queue_id 暴露（YAML 拓扑反推依赖 C++ 队列指针，原 _extract_edges 用 Python id() 不稳定）
 - benchmarks/ 目录不存在（旧 T5.2 已移除，无需创建）
 - examples/ 和 docs/ 目录不存在，但项目根目录有 demo_detect.py/demo_full_pipeline.py 等可作为 T5.3 基础素材
 - 开发环境：RTX 3060 12GB + WSL2（16GB 内存），跑 2-3 路 1080p pipeline 可行

@@ -239,24 +239,26 @@ def _node_params(node: Any) -> dict[str, Any]:
 
 
 def _extract_edges(pipeline: Any) -> list[tuple[str, str]]:
-    """Walk each node's output queue to reconstruct edges."""
-    # The C++ Pipeline exposes nodes() as {name: NodeBase}.
-    # To reconstruct edges we compare queue identities.
+    """Walk each node's output queue to reconstruct edges.
+
+    Uses ``output_queue_id()`` / ``input_queue_id()`` which return the C++
+    pointer of the underlying BoundedQueue. ``id()`` on a freshly-cast Python
+    wrapper is unstable, so the C++ pointer is the only reliable identity.
+    """
     nodes_map: dict[str, Any] = pipeline.nodes()
 
-    # Build: queue_id -> node_name for output queues
     output_queue_to_node: dict[int, str] = {}
     for name, node in nodes_map.items():
-        oq = node.output_queue() if hasattr(node, "output_queue") else None
-        if oq is not None:
-            output_queue_to_node[id(oq)] = name
+        oqid = node.output_queue_id() if hasattr(node, "output_queue_id") else None
+        if oqid is not None:
+            output_queue_to_node[int(oqid)] = name
 
     edges: list[tuple[str, str]] = []
     for name, node in nodes_map.items():
-        iq = node.input_queue() if hasattr(node, "input_queue") else None
-        if iq is None:
+        iqid = node.input_queue_id() if hasattr(node, "input_queue_id") else None
+        if iqid is None:
             continue
-        upstream = output_queue_to_node.get(id(iq))
+        upstream = output_queue_to_node.get(int(iqid))
         if upstream is not None:
             edges.append((upstream, name))
     return edges

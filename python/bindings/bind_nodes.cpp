@@ -4,6 +4,7 @@
 #include <nanobind/stl/vector.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/variant.h>
 
 #include <chrono>
 #include <optional>
@@ -52,6 +53,8 @@ void bind_nodes(nb::module_& m) {
         .def("stats", &NodeBase::stats)
         .def("is_source", &NodeBase::is_source)
         .def("is_sink", &NodeBase::is_sink)
+        .def("set_param", &NodeBase::set_param,
+             nb::arg("name"), nb::arg("value"))
         .def("create_output_queue", &NodeBase::create_output_queue,
              nb::arg("capacity") = 16,
              nb::arg("policy") = OverflowPolicy::DROP_OLDEST)
@@ -61,7 +64,17 @@ void bind_nodes(nb::module_& m) {
             auto result = q->pop_for(std::chrono::milliseconds(timeout_ms));
             if (!result.has_value()) return nb::none();
             return nb::cast(std::move(*result));
-        }, nb::arg("timeout_ms") = 500);
+        }, nb::arg("timeout_ms") = 500)
+        .def("input_queue_id", [](NodeBase& n) -> nb::object {
+            auto* q = n.input_queue();
+            if (!q) return nb::none();
+            return nb::cast(reinterpret_cast<uintptr_t>(q));
+        })
+        .def("output_queue_id", [](NodeBase& n) -> nb::object {
+            auto q = n.output_queue();
+            if (!q) return nb::none();
+            return nb::cast(reinterpret_cast<uintptr_t>(q.get()));
+        });
 
     nb::class_<SourceNode, NodeBase>(m, "SourceNode");
 
