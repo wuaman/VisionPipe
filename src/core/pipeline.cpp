@@ -97,11 +97,14 @@ Pipeline& Pipeline::connect(NodeBase* a, NodeBase* b) {
     auto b_node = get_node(b_name);
 
     if (b_node->input_queue()) {
-        // Merge topology: b already has an input_queue from a previous connect.
-        // Make a share the same queue as its output_queue.
+        // b already has an input_queue.  Two possibilities:
+        //   (1) Merge topology — the queue was set by a previous connect() and is
+        //       owned by another node's output_queue.  Share it with `a`.
+        //   (2) Self-owned queue — e.g. InferNode's owned_input_queue_ created
+        //       in its constructor for standalone unit-test use.  No upstream
+        //       owns it, so replace it with `a`'s output_queue instead.
         auto existing_queue = b_node->input_queue();
 
-        // Find the shared_ptr that owns this queue
         std::shared_ptr<BoundedQueue<Frame>> shared_q;
         for (auto& sq : shared_queues_) {
             if (sq.get() == existing_queue) {
@@ -110,11 +113,12 @@ Pipeline& Pipeline::connect(NodeBase* a, NodeBase* b) {
             }
         }
 
+        bool found_upstream_owner = static_cast<bool>(shared_q);
         if (!shared_q) {
-            // First merge for this queue — find original owner
             for (auto& [name, node] : nodes_) {
                 if (node->output_queue() && node->output_queue().get() == existing_queue) {
                     shared_q = node->output_queue();
+                    found_upstream_owner = true;
                     break;
                 }
             }
@@ -123,10 +127,10 @@ Pipeline& Pipeline::connect(NodeBase* a, NodeBase* b) {
             }
         }
 
-        if (shared_q) {
+        if (found_upstream_owner && shared_q) {
+            // Case (1): merge.  Share the upstream queue.
             a_node->set_output_queue(shared_q);
 
-            // Update producer count
             auto* raw_q = shared_q.get();
             if (queue_ref_counts_.find(raw_q) == queue_ref_counts_.end()) {
                 queue_ref_counts_[raw_q] = std::make_unique<QueueRefCount>();
@@ -136,6 +140,12 @@ Pipeline& Pipeline::connect(NodeBase* a, NodeBase* b) {
 
             VP_LOG_INFO("Merge: '{}' → '{}' (shared queue, {} producers)",
                         a_name, b_name, queue_ref_counts_[raw_q]->producer_count);
+        } else {
+            // Case (2): self-owned input queue.  Override it with `a`'s output.
+            if (!a_node->output_queue()) {
+                a_node->create_output_queue(default_queue_capacity_, default_overflow_policy_);
+            }
+            b_node->set_input_queue(a_node->output_queue().get());
         }
     } else {
         // Normal connection: create a new output queue on a, wire to b

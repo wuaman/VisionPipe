@@ -1,17 +1,23 @@
 """E2E tests for T5.1: Multi-Pipeline Concurrent Integration.
 
-Tests verify:
-  1. Two pipelines run concurrently and produce disjoint class-ID sets in their
-     results (simulating a "physics lab" pipeline vs a "chemistry lab" pipeline).
-  2. When both pipelines share the same TensorRT engine instance, VRAM increment
-     for the second pipeline is ≤ 10% of single-pipeline VRAM usage.
+Per the revised Phase 5 spec these tests verify *functional* correctness — the
+original "VRAM ≤10%" hard target was dropped in favour of behavioural checks:
 
-Requires: NVIDIA GPU (CUDA). All GPU-dependent tests are skipped when no GPU is
-detected.  The VRAM-sharing test additionally requires pynvml and a TRT engine.
+  1. Two pipelines run concurrently and produce disjoint class-ID sets
+     (no cross-contamination between independent flows).
+  2. A TRT engine instance can be shared by two DetectorNodes — both
+     pipelines load and run without errors, and stopping one pipeline
+     does not affect the other (lifecycle isolation).
+  3. PipelineManager tracks state transitions for two concurrent pipelines
+     and releases resources cleanly after all pipelines are destroyed.
+
+All GPU-dependent tests are skipped when no GPU is detected.  The shared-engine
+test additionally skips when no TRT engine asset is available.
 """
 
 from __future__ import annotations
 
+import gc
 import json
 import sys
 import threading
@@ -48,28 +54,22 @@ def _has_gpu() -> bool:
 
 
 def _trt_engine_path() -> Path | None:
+    """Locate a usable TensorRT engine file under tests/models/."""
     candidates = [
-        ROOT / "tests" / "data" / "yolov8n_dynamic.engine",
-        ROOT / "tests" / "data" / "yolov8n_fp16.engine",
+        ROOT / "tests" / "models" / "yolov8n_fp16.engine",
+        ROOT / "tests" / "models" / "yolov8n_dynamic.engine",
+        ROOT / "tests" / "models" / "yolov8n.engine",
     ]
     return next((p for p in candidates if p.exists()), None)
 
 
-def _has_pynvml() -> bool:
-    try:
-        import pynvml  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
 requires_gpu = pytest.mark.skipif(not _has_gpu(), reason="GPU required")
-requires_trt_nvml = pytest.mark.skipif(
-    _trt_engine_path() is None or not _has_pynvml() or not _has_gpu(),
-    reason="TRT engine file + pynvml + GPU required",
+requires_trt = pytest.mark.skipif(
+    _trt_engine_path() is None or not _has_gpu(),
+    reason="TensorRT engine file under tests/models/ + GPU required",
 )
 
-TEST_VIDEO = ROOT / "tests" / "data" / "test.mp4"
+TEST_VIDEO = ROOT / "tests" / "data" / "48-3.mp4"
 
 
 # ---------------------------------------------------------------------------
@@ -117,13 +117,20 @@ def _build_inject_pipeline(
     video_path: str,
     class_ids: list[int],
     pipeline_name: str,
+    *,
+    loop_source: bool = True,
 ) -> tuple[Any, ClassInjectNode, Any]:
     """Build a FileSource → ClassInjectNode → JsonResultSink pipeline.
 
-    Returns (pipeline, inject_node, json_sink).  The caller is responsible for
-    keeping *inject_node* alive for the duration of the pipeline run.
+    The caller must hold a reference to *inject_node* for the lifetime of the
+    pipeline so the Python instance is not garbage-collected.
     """
-    source = visionpipe.FileSource(video_path, visionpipe.DecodeMode.CPU)
+    src_cfg = visionpipe.SourceConfig(video_path)
+    src_cfg.decode_mode = visionpipe.DecodeMode.AUTO
+    src_cfg.loop = loop_source
+    src_cfg.queue_capacity = 8
+    src_cfg.overflow_policy = visionpipe.OverflowPolicy.DROP_OLDEST
+    source = visionpipe.FileSource(src_cfg)
 
     inject = ClassInjectNode(class_ids=class_ids, name=f"inject_{pipeline_name}")
     sink_cfg = visionpipe.JsonResultSinkConfig()
@@ -140,6 +147,52 @@ def _build_inject_pipeline(
     pipeline.connect(inject._cpp_node, sink)
 
     return pipeline, inject, sink
+
+
+def _build_detector_pipeline(
+    video_path: str,
+    engine: Any,
+    pipeline_name: str,
+) -> tuple[Any, Any]:
+    """Build a FileSource → DetectorNode → JsonResultSink pipeline.
+
+    Uses ``OverflowPolicy.BLOCK`` because ``DetectorNode`` (an ``InferNode``)
+    re-orders output by sequential ``frame_id`` — ``DROP_OLDEST`` creates id
+    gaps that stall the re-order queue.
+    """
+    src_cfg = visionpipe.SourceConfig(video_path)
+    src_cfg.decode_mode = visionpipe.DecodeMode.AUTO
+    src_cfg.loop = True
+    src_cfg.queue_capacity = 8
+    src_cfg.overflow_policy = visionpipe.OverflowPolicy.BLOCK
+    source = visionpipe.FileSource(src_cfg)
+
+    det = visionpipe.DetectorNode(engine, visionpipe.DetectorConfig(), f"det_{pipeline_name}")
+    sink = visionpipe.JsonResultSink(visionpipe.JsonResultSinkConfig(), f"sink_{pipeline_name}")
+
+    cfg = visionpipe.PipelineConfig()
+    cfg.name = pipeline_name
+    pipeline = visionpipe.Pipeline(cfg)
+    pipeline.add_node(source)
+    pipeline.add_node(det)
+    pipeline.add_node(sink)
+    pipeline.connect(source, det)
+    pipeline.connect(det, sink)
+    return pipeline, sink
+
+
+def _safe_stop_destroy(manager: Any, pipeline_ids: list[str]) -> None:
+    for pid in pipeline_ids:
+        try:
+            status = manager.status(pid)
+            if status != visionpipe.PipelineStatus.STOPPED:
+                manager.stop(pid)
+        except Exception:
+            pass
+        try:
+            manager.destroy(pid)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -219,109 +272,90 @@ def test_two_pipelines_concurrent_disjoint_classes() -> None:
             f"Class ID sets overlap: {phys_class_ids & chem_class_ids}"
         )
     finally:
-        for pid in [phys_id, chem_id]:
-            try:
-                manager.stop(pid)
-            except Exception:
-                pass
-            try:
-                manager.destroy(pid)
-            except Exception:
-                pass
+        _safe_stop_destroy(manager, [phys_id, chem_id])
 
 
 # ---------------------------------------------------------------------------
-# Test 2: two pipelines share the same TRT backbone — VRAM delta ≤ 10%
+# Test 2: shared TRT engine + lifecycle isolation
 # ---------------------------------------------------------------------------
 
-@requires_trt_nvml
-def test_shared_backbone_vram_increment() -> None:
-    """VRAM increment when adding a second pipeline sharing the same TRT engine is ≤ 10%.
+@requires_trt
+def test_shared_engine_lifecycle_isolation() -> None:
+    """Two pipelines share one TRT engine; stopping one doesn't affect the other.
 
-    Acceptance criteria (T5.1):
-      - Single TrtModelEngine instance shared between two DetectorNodes.
-      - VRAM after adding pipeline 2 increases by ≤ 10% of what pipeline 1 consumed.
+    Acceptance criteria (T5.1, revised — functional verification only):
+      - Both pipelines load and reach RUNNING using a single shared engine.
+      - Stopping pipeline 1 leaves pipeline 2 still RUNNING.
+      - After both stop, resources release cleanly (no exceptions on destroy).
     """
-    import pynvml
-
     if not TEST_VIDEO.exists():
         pytest.skip(f"Test video not found: {TEST_VIDEO}")
 
     engine_path = _trt_engine_path()
     assert engine_path is not None
 
-    pynvml.nvmlInit()
-    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-
-    def used_vram_bytes() -> int:
-        return pynvml.nvmlDeviceGetMemoryInfo(handle).used
-
     manager = visionpipe.PipelineManager()
-    # Shared engine — loaded once, referenced by both pipelines
     shared_engine = visionpipe.TrtModelEngine(str(engine_path))
 
-    baseline_vram = used_vram_bytes()
+    pipe1, sink1 = _build_detector_pipeline(str(TEST_VIDEO), shared_engine, "trt-pipe-1")
+    pipe2, sink2 = _build_detector_pipeline(str(TEST_VIDEO), shared_engine, "trt-pipe-2")
 
-    def _build_detector_pipeline(name: str, engine: Any) -> tuple[str, Any]:
-        source = visionpipe.FileSource(str(TEST_VIDEO), visionpipe.DecodeMode.CPU)
-        det = visionpipe.DetectorNode(engine, visionpipe.DetectorConfig(), f"det_{name}")
-        sink = visionpipe.JsonResultSink(visionpipe.JsonResultSinkConfig(), f"sink_{name}")
-        cfg = visionpipe.PipelineConfig()
-        cfg.name = name
-        pipeline = visionpipe.Pipeline(cfg)
-        pipeline.add_node(source).add_node(det).add_node(sink)
-        pipeline.connect(source, det)
-        pipeline.connect(det, sink)
-        pid = manager.create_pipeline(pipeline)
-        return pid, sink
-
-    id1, sink1 = _build_detector_pipeline("trt-pipe-1", shared_engine)
-    manager.start(id1)
-    time.sleep(1.0)
-    vram_single = used_vram_bytes() - baseline_vram
-
-    id2, sink2 = _build_detector_pipeline("trt-pipe-2", shared_engine)
-    manager.start(id2)
-    time.sleep(0.5)
-    vram_delta = used_vram_bytes() - baseline_vram - vram_single
+    id1 = manager.create_pipeline(pipe1)
+    id2 = manager.create_pipeline(pipe2)
 
     try:
-        assert vram_single > 0, (
-            "Pipeline 1 consumed no measurable VRAM — TRT engine may not have loaded"
+        manager.start(id1)
+        manager.start(id2)
+        time.sleep(0.5)
+
+        assert manager.status(id1) == visionpipe.PipelineStatus.RUNNING
+        assert manager.status(id2) == visionpipe.PipelineStatus.RUNNING
+
+        # Both pipelines should produce results within a short window.
+        assert sink1.pop_json(2000) is not None, "Pipeline 1 produced no JSON within 2 s"
+        assert sink2.pop_json(2000) is not None, "Pipeline 2 produced no JSON within 2 s"
+
+        # Stop pipeline 1, verify pipeline 2 remains RUNNING.
+        manager.stop(id1)
+        time.sleep(0.2)
+        assert manager.status(id1) == visionpipe.PipelineStatus.STOPPED, (
+            f"Pipeline 1 expected STOPPED, got {manager.status(id1)}"
         )
-        assert vram_delta <= 0.10 * vram_single, (
-            f"VRAM delta {vram_delta / 1024**2:.1f} MiB exceeds 10% of single-pipeline "
-            f"VRAM {vram_single / 1024**2:.1f} MiB "
-            f"(actual delta ratio: {vram_delta * 100 / vram_single:.1f}%)"
+        assert manager.status(id2) == visionpipe.PipelineStatus.RUNNING, (
+            f"Pipeline 2 should remain RUNNING after pipeline 1 stop, "
+            f"got {manager.status(id2)}"
         )
+
+        # Pipeline 2 still emits results after pipeline 1 stopped.
+        assert sink2.pop_json(2000) is not None, (
+            "Pipeline 2 produced no JSON after pipeline 1 stop — sharing broken?"
+        )
+
+        # Stop pipeline 2.
+        manager.stop(id2)
+        time.sleep(0.2)
+        assert manager.status(id2) == visionpipe.PipelineStatus.STOPPED
     finally:
-        for pid in [id1, id2]:
-            try:
-                manager.stop(pid)
-            except Exception:
-                pass
-            try:
-                manager.destroy(pid)
-            except Exception:
-                pass
-        pynvml.nvmlShutdown()
+        _safe_stop_destroy(manager, [id1, id2])
+        del shared_engine
+        gc.collect()
 
 
 # ---------------------------------------------------------------------------
-# Test 3: pipeline manager reports correct state transitions under concurrency
+# Test 3: pipeline manager state transitions under concurrency + clean teardown
 # ---------------------------------------------------------------------------
 
 @requires_gpu
 def test_concurrent_pipeline_lifecycle_states() -> None:
-    """PipelineManager correctly tracks RUNNING state for two concurrent pipelines."""
+    """PipelineManager correctly tracks RUNNING/STOPPED for two concurrent pipelines."""
     if not TEST_VIDEO.exists():
         pytest.skip(f"Test video not found: {TEST_VIDEO}")
 
     video = str(TEST_VIDEO)
     manager = visionpipe.PipelineManager()
 
-    pipe1, inject1, sink1 = _build_inject_pipeline(video, [0], "state-pipe-1")
-    pipe2, inject2, sink2 = _build_inject_pipeline(video, [1], "state-pipe-2")
+    pipe1, _inject1, _sink1 = _build_inject_pipeline(video, [0], "state-pipe-1")
+    pipe2, _inject2, _sink2 = _build_inject_pipeline(video, [1], "state-pipe-2")
 
     id1 = manager.create_pipeline(pipe1)
     id2 = manager.create_pipeline(pipe2)
@@ -343,9 +377,13 @@ def test_concurrent_pipeline_lifecycle_states() -> None:
         time.sleep(0.2)
         assert manager.status(id1) == visionpipe.PipelineStatus.STOPPED
         assert manager.status(id2) == visionpipe.PipelineStatus.STOPPED
+
+        # Destroy both, then verify they're gone from manager.list().
+        manager.destroy(id1)
+        manager.destroy(id2)
+        remaining = set(manager.list())
+        assert id1 not in remaining and id2 not in remaining, (
+            f"Pipelines still present after destroy: {remaining}"
+        )
     finally:
-        for pid in [id1, id2]:
-            try:
-                manager.destroy(pid)
-            except Exception:
-                pass
+        _safe_stop_destroy(manager, [id1, id2])

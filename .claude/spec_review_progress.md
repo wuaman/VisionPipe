@@ -90,7 +90,7 @@ Next phase: (all phases confirmed)
 - **T2.2b ICodec HAL** → 从正式排期移除，移至 DEV_SPEC「未来扩展」章节
 
 #### 代码验证结果
-- T5.1（标记 [x]）：test_multi_pipeline.py 存在且结构正确，但测试资产路径不匹配（test.mp4 不存在、engine 路径错误），实际会全部 skip。**标记回 [ ]，需 rework**
+- T5.1（标记 [x]）：test_multi_pipeline.py 已 rework — 修正测试资产路径 (48-3.mp4, tests/models/) + 重写 shared-engine 测试为功能性生命周期隔离 + 修复 Pipeline::connect 对 InferNode 自有 input_queue 的处理。3 个测试全部通过 ✓
 - benchmarks/ 目录不存在（旧 T5.2 已移除，无需创建）
 - examples/ 和 docs/ 目录不存在，但项目根目录有 demo_detect.py/demo_full_pipeline.py 等可作为 T5.3 基础素材
 - 开发环境：RTX 3060 12GB + WSL2（16GB 内存），跑 2-3 路 1080p pipeline 可行
