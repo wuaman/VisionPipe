@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>VisionPipe-py WebRTC Viewer</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", sans-serif; background: #1e1e1e; color: #ddd; margin: 0; padding: 16px; }
+  h1 { margin: 0 0 12px 0; font-size: 18px; }
+  .meta { font-size: 13px; color: #999; margin-bottom: 8px; }
+  .meta code { background: #2d2d2d; padding: 2px 6px; border-radius: 3px; color: #6cf; }
+  #v { background: #000; border: 1px solid #444; max-width: 100%; height: auto; display: block; }
+  #status-bar { margin-top: 8px; font-size: 14px; display: flex; gap: 12px; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #888; display: inline-block; }
+  .dot.connecting { background: #fc0; animation: pulse 1s infinite; }
+  .dot.connected { background: #0c8; }
+  .dot.failed { background: #f44; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  button { padding: 6px 14px; background: #2d6cdf; color: white; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #4480e8; }
+  #log { margin-top: 12px; max-height: 180px; overflow-y: auto; background: #2d2d2d; padding: 8px 12px; border-radius: 4px; font-family: monospace; font-size: 11px; line-height: 1.5; }
+  .log-line { color: #aaa; }
+  .log-err { color: #f88; }
+</style>
+</head>
+<body>
+<h1>VisionPipe-py · WebRTC Viewer</h1>
+<div class="meta">
+  Pipeline ID: <code id="pid-label">(loading)</code>
+  · Signaling: <code id="ws-label">(loading)</code>
+</div>
+<video id="v" autoplay playsinline muted width="1280" height="720"></video>
+<div id="status-bar">
+  <span class="dot" id="dot"></span>
+  <span id="status">连接中...</span>
+  <button id="reconnect">Reconnect</button>
+</div>
+<div id="log"></div>
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const pid = params.get("pid") || "";
+  const wsScheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsScheme}//${window.location.host}/ws/${pid}/webrtc`;
+
+  document.getElementById("pid-label").textContent = pid || "(missing ?pid= query param)";
+  document.getElementById("ws-label").textContent = wsUrl;
+
+  const video = document.getElementById("v");
+  const dot = document.getElementById("dot");
+  const statusEl = document.getElementById("status");
+  const logEl = document.getElementById("log");
+  const reconnectBtn = document.getElementById("reconnect");
+
+  let pc = null;
+  let ws = null;
+
+  function log(msg, isErr) {
+    const ts = new Date().toISOString().substring(11, 23);
+    const line = document.createElement("div");
+    line.className = isErr ? "log-err" : "log-line";
+    line.textContent = `[${ts}] ${msg}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    dot.className = "dot " + (kind || "");
+  }
+
+  function start() {
+    if (!pid) {
+      setStatus("缺少 ?pid= 参数", "failed");
+      log("URL must include ?pid=<pipeline-id>", true);
+      return;
+    }
+    setStatus("连接信令中...", "connecting");
+    log(`connecting to ${wsUrl}`);
+
+    pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    });
+
+    pc.ontrack = (e) => {
+      video.srcObject = e.streams[0];
+      setStatus("已连接 (waiting for first frame)", "connected");
+      log(`ontrack: ${e.track.kind} (${e.streams[0].id})`);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      log(`ICE state: ${pc.iceConnectionState}`);
+      if (pc.iceConnectionState === "failed") {
+        setStatus("ICE 连接失败", "failed");
+      }
+    };
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "candidate",
+          candidate: e.candidate.candidate,
+          sdpMid: e.candidate.sdpMid
+        }));
+      }
+    };
+
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => log("WebSocket opened");
+    ws.onclose = (e) => {
+      log(`WebSocket closed (code=${e.code})`, e.code !== 1000);
+      if (e.code === 4004) setStatus("Pipeline 不存在或无 WebRTCSink (4004)", "failed");
+    };
+    ws.onerror = () => log("WebSocket error", true);
+    ws.onmessage = async (msg) => {
+      const d = JSON.parse(msg.data);
+      if (d.type === "offer") {
+        log("← SDP offer received");
+        await pc.setRemoteDescription({ type: "offer", sdp: d.sdp });
+        const ans = await pc.createAnswer();
+        await pc.setLocalDescription(ans);
+        ws.send(JSON.stringify({ type: "answer", sdp: ans.sdp }));
+        log("→ SDP answer sent");
+      } else if (d.type === "candidate") {
+        try {
+          await pc.addIceCandidate({ candidate: d.candidate, sdpMid: d.sdpMid });
+        } catch (err) {
+          log(`addIceCandidate error: ${err.message}`, true);
+        }
+      }
+    };
+
+    video.addEventListener("loadeddata", () => {
+      setStatus("playing", "connected");
+      log(`first frame decoded (${video.videoWidth}x${video.videoHeight})`);
+    }, { once: true });
+  }
+
+  function teardown() {
+    try { if (ws) ws.close(); } catch (e) {}
+    try { if (pc) pc.close(); } catch (e) {}
+    ws = null;
+    pc = null;
+    video.srcObject = null;
+  }
+
+  reconnectBtn.addEventListener("click", () => {
+    log("manual reconnect");
+    teardown();
+    setTimeout(start, 200);
+  });
+
+  start();
+})();
+</script>
+</body>
+</html>
