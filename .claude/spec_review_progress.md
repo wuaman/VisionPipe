@@ -131,3 +131,4 @@ Next phase: (all phases confirmed)
 - 2026-05-20: T3.1 补齐完成 — DSL 重构：>> 返回 Pipeline（非 PipelineBuilder）、合并语法 [src1,src2]>>det、run(block=False)/stop() API
 - 2026-05-20: T3.2 完成 — CustomNode 子进程架构：C++ ProcessProxyNode(UDS JSON IPC) + Python CustomNode(subprocess/inline 双模式) + FrameView 安全视图 + IPC protocol + worker + 崩溃自动重启
 - 2026-05-21: T4.3 补齐完成 — WebSocket 控制通道新增通用 set_param 消息类型，扁平格式 `{type, node_id, param_name, value}` 与 REST `/params` 一致；覆盖参数校验、节点查找、拒绝（返回 False）、异常路径；23 个新测试 + 18 个原有 ROI 测试全部通过
+- 2026-05-22: T5.3 完成 ✓ — examples/quickstart.py (单 Pipeline 入门) + examples/multi_pipeline_demo.py (双 Pipeline 共享 engine + 生命周期隔离, 消费端类别过滤) + docs/api_reference.md (~600 行 Phase 5 完整 Python API 参考) + README.md 全量更新（示例链接、API 片段、Phase 状态 ✅）。两个 demo 均在 RTX 3060 12GB + WSL2 实测通过, 验证类别隔离 + 生命周期隔离。

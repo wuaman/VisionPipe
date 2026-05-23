@@ -134,75 +134,151 @@ uv run pytest
 
 ## 使用示例
 
+> 📁 完整可运行示例在 [`examples/`](examples/) 目录：
+> - [`examples/quickstart.py`](examples/quickstart.py) — 单 Pipeline 入门 demo（检测 + JSON 输出）
+> - [`examples/multi_pipeline_demo.py`](examples/multi_pipeline_demo.py) — 多 Pipeline 并发 + 共享 engine + 生命周期隔离
+
+按 README 完成依赖安装与构建后，10 分钟内即可跑通：
+
+```bash
+# 1. 单 Pipeline 检测演示（运行 5 秒，打印前 3 帧 JSON 结果与 FPS）
+uv run python examples/quickstart.py
+
+# 2. 多 Pipeline 并发演示（vehicle vs person 双场景，验证类别隔离 + 生命周期隔离）
+uv run python examples/multi_pipeline_demo.py
+```
+
+完整 Python API 参考见 [`docs/api_reference.md`](docs/api_reference.md)。
+
 ### Python DSL 编排 Pipeline
 
 ```python
-from visionpipe import Pipeline, FileSource, DetectorNode, WebRTCSink
+from visionpipe import (
+    FileSource, SourceConfig, DecodeMode,
+    DetectorNode, DetectorConfig, TrtModelEngine,
+    JsonResultSink, JsonResultSinkConfig,
+)
 
-# 创建 pipeline
-pipe = Pipeline()
+# 定义节点
+src_cfg = SourceConfig("video.mp4")
+src_cfg.decode_mode = DecodeMode.AUTO  # NVDEC 优先，不可用则回退 CPU
+src = FileSource(src_cfg)
 
-# 定义节点并连接
-src = FileSource("video.mp4", decode_mode="auto")  # GPU 硬解码（默认）
-det = DetectorNode("models/yolov8/yolov8n.engine", parallel_workers=2)
-sink = WebRTCSink(port=8080)
+engine = TrtModelEngine("models/yolov8/yolov8n_dynamic.engine")
+det_cfg = DetectorConfig()
+det_cfg.score_threshold = 0.25
+det_cfg.workers = 2  # 并行 worker，自动按 frame_id 重排序输出
+det = DetectorNode(engine, det_cfg, "detector")
 
-# 用 >> 运算符连接节点构成 DAG
-src >> det >> sink
+sink = JsonResultSink(JsonResultSinkConfig(), "sink")
 
-# 启动 pipeline
-pipe.run()
+# 用 >> 运算符链式构建 Pipeline (Phase 3 DSL)
+pipe = src >> det >> sink
+
+# 启动 (block=True 阻塞至 source 自然结束；block=False 后台运行)
+pipe.run(block=False)
+# ... 业务消费 sink.pop_json(timeout_ms=200) ...
+pipe.stop()
 ```
 
 ### 自定义业务节点
 
+VisionPipe-py 提供两种自定义节点：
+
 ```python
-from visionpipe import PyNode, Frame
+# 方式 1: PyNode — 同进程回调，适合极轻量逻辑
+from visionpipe import PyNode
 
 class AlertNode(PyNode):
-    """告警判定节点：检测特定类别并触发告警"""
+    def __init__(self, target_classes: list[int]) -> None:
+        self._targets = set(target_classes)
+        super().__init__(name="alert")
 
-    def __init__(self, target_classes: list[int]):
-        self.target_classes = target_classes
+    def process(self, frame) -> None:
+        hits = [d for d in frame.detections if d.class_id in self._targets]
+        if hits:
+            frame.set_user_data("alert_count", len(hits))
 
-    def process(self, frame: Frame) -> Frame:
-        for det in frame.detections:
-            if det.class_id in self.target_classes:
-                # 业务逻辑：触发告警、写数据库等
-                self.trigger_alert(det)
-        return frame
+# 链路：PyNode/CustomNode 自动 unwrap 到 _cpp_node
+pipe = src >> det >> AlertNode([0, 2]) >> sink
+```
 
-# 使用自定义节点
-src >> det >> AlertNode([0, 1]) >> sink  # 检测 person 和 car
+```python
+# 方式 2: CustomNode — 独立子进程，真并行无 GIL，适合重业务逻辑
+from visionpipe import CustomNode, FrameView
+
+class AnalyzeNode(CustomNode):
+    def on_frame(self, frame: FrameView) -> None:
+        frame.user_data["analysis"] = my_heavy_compute(frame.detections)
+
+node = AnalyzeNode(name="analyze", process_mode="subprocess")
+pipe = src >> det >> node._cpp_node >> sink
+# 退出前调用 node.stop() 释放子进程
 ```
 
 ### YAML 配置导入/导出
 
 ```python
-# 导出 pipeline 配置
-pipe.export_yaml("pipeline_config.yaml")
+# 导出 pipeline 拓扑 + 节点参数到 YAML
+pipe.export_yaml("pipeline.yaml")
 
-# 从 YAML 导入
-pipe = Pipeline.load_yaml("pipeline_config.yaml")
-pipe.run()
+# 仅解析 YAML 得到 PipelineSpec（不需要 GPU）
+spec = Pipeline.load_yaml("pipeline.yaml")
+
+# 完整重建：需用 node_overrides 注入有外部依赖的节点
+rebuilt = Pipeline.from_yaml(
+    "pipeline.yaml",
+    node_overrides={"src": src, "det": det, "sink": sink},
+)
 ```
 
 ### REST 管理 API
 
-```bash
-# 创建 pipeline
-curl -X POST http://localhost:8080/pipelines -d @pipeline.yaml
+启动嵌入式 REST + WebSocket 服务（aiohttp）：
 
-# 查询所有 pipeline
-curl http://localhost:8080/pipelines
+```python
+import asyncio, visionpipe as vp
+from visionpipe.server.management_api import ManagementServer
 
-# 查询健康状态
-curl http://localhost:8080/pipelines/{id}/health
+async def main() -> None:
+    manager = vp.PipelineManager()
+    server = ManagementServer(manager, host="0.0.0.0", port=8080)
+    await server.start()
+    # ... 业务运行 ...
+    await server.stop()
 
-# ROI 热更新
-curl -X POST http://localhost:8080/pipelines/{id}/params \
-  -d '{"node_id": "detector", "param_name": "roi", "value": [[0.1,0.1], [0.9,0.9]]}'
+asyncio.run(main())
 ```
+
+常用端点：
+
+```bash
+# 创建 pipeline (body: {"spec": <PipelineSpec dict or YAML string>})
+curl -X POST http://localhost:8080/pipelines -H "Content-Type: application/json" -d @spec.json
+
+# 列表 / 启动 / 停止 / 销毁
+curl http://localhost:8080/pipelines
+curl -X POST http://localhost:8080/pipelines/{id}/start
+curl -X POST http://localhost:8080/pipelines/{id}/stop
+curl -X DELETE http://localhost:8080/pipelines/{id}
+
+# 健康 + 节点状态
+curl http://localhost:8080/pipelines/{id}/health
+curl http://localhost:8080/pipelines/{id}/nodes
+
+# 通用参数热更
+curl -X POST http://localhost:8080/pipelines/{id}/params \
+  -H "Content-Type: application/json" \
+  -d '{"node_id": "detector", "param_name": "score_threshold", "value": 0.5}'
+```
+
+WebSocket 端点：
+
+| 路径 | 用途 |
+|------|------|
+| `/ws/{id}/results` | 推送 JsonResultSink 每帧 JSON |
+| `/ws/{id}/control` | 通用控制通道（`ping` / `set_param` / `roi`） |
+| `/ws/{id}/webrtc` | WebRTC SDP/ICE 信令（需启用 `VISIONPIPE_USE_WEBRTC=ON`） |
 
 ## 项目结构
 
@@ -258,10 +334,10 @@ VisionPipe-py/
 |------|------|------|
 | Phase 0 | 工程骨架 + CI 基础 | ✅ 完成 |
 | Phase 1 | C++ 核心调度框架 | ✅ 完成 |
-| Phase 2 | NVIDIA 推理 + 编解码 | 🚧 进行中 |
-| Phase 3 | Python 绑定 + DSL | 📋 待开始 |
-| Phase 4 | 管理 API + 前端交付 | 📋 待开始 |
-| Phase 5 | 集成测试 + 性能调优 | 📋 待开始 |
+| Phase 2 | NVIDIA 推理 + 编解码 | ✅ 完成 |
+| Phase 3 | Python 绑定 + DSL | ✅ 完成 |
+| Phase 4 | 管理 API + 前端交付 | ✅ 完成 |
+| Phase 5 | 集成验证 + 收尾 | ✅ 完成 |
 
 ### 一期验证模型
 
@@ -331,9 +407,10 @@ uv run pytest tests/unit/python/test_bindings.py -v
 
 ## 文档
 
-- [DEV_SPEC.md](DEV_SPEC.md) - 详细开发规范和任务清单
-- [CLAUDE.md](CLAUDE.md) - Claude Code 开发指南
-- [docs/api_reference.md](docs/api_reference.md) - API 参考文档（待完成）
+- [`DEV_SPEC.md`](DEV_SPEC.md) — 详细开发规范与任务清单
+- [`CLAUDE.md`](CLAUDE.md) — Claude Code 开发指南
+- [`docs/api_reference.md`](docs/api_reference.md) — Python API 完整参考
+- [`examples/`](examples/) — 可运行示例代码
 
 ## License
 
@@ -349,8 +426,3 @@ Apache License 2.0
 ---
 
 **VisionPipe-py** - 高性能视频 AI 推理框架，让 Python 开发者也能轻松驾驭 GPU 加速的视频处理。
-
-todo：
-1. 各个节点间队列溢出策略是否都一样？主要考虑到json字段等如果不是阻塞可能会被抛弃掉，是否要考虑将各个节点间的队列溢出策略自行配置
-2. 关于上报节点等的实现，放在python还是c，我觉得应该在python。这个可以放在后面一期加进去
-3. 自动开发的skill，对于之前已经实现过的测试用例是保留还是删除重写，要考虑
