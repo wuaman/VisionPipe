@@ -82,8 +82,10 @@ void SegMaskDecoder::decode(const Tensor& det_output,
         // 缩放 bbox 到原图空间
         scale_bbox(det.bbox, letterbox_params, orig_width, orig_height);
 
-        // 缩放 mask 到原图尺寸
-        resize_mask(masks[i], mask_w, mask_h, orig_width, orig_height);
+        // 缩放 mask 到原图尺寸（letterbox 逆映射，与 bbox 对齐）
+        resize_mask(masks[i], mask_w, mask_h, letterbox_params,
+                    params.input_width, params.input_height,
+                    orig_width, orig_height);
     }
 }
 
@@ -309,22 +311,30 @@ void SegMaskDecoder::scale_bbox(float bbox[4],
 
 void SegMaskDecoder::resize_mask(std::vector<uint8_t>& mask,
                                  int src_width, int src_height,
+                                 const LetterboxParams& letterbox_params,
+                                 int input_width, int input_height,
                                  int dst_width, int dst_height) {
-    if (src_width == dst_width && src_height == dst_height) {
-        return;
-    }
+    // 原型掩码覆盖的是 letterbox 后的模型输入（缩放内容 + padding 灰边）。
+    // 对每个原图像素做正向 letterbox 变换找到它在掩码里的位置：
+    //   letterbox 坐标 = 原图坐标 * scale + pad
+    //   掩码坐标     = letterbox 坐标 * (mask_size / input_size)
+    // 与 bbox 的 map_bbox_back 互为逆变换，保证掩码与检测框对齐。
+    std::vector<uint8_t> resized(dst_width * dst_height, 0);
 
-    std::vector<uint8_t> resized(dst_width * dst_height);
-
-    const float scale_x = static_cast<float>(src_width) / dst_width;
-    const float scale_y = static_cast<float>(src_height) / dst_height;
+    const float mx = static_cast<float>(src_width) / static_cast<float>(input_width);
+    const float my = static_cast<float>(src_height) / static_cast<float>(input_height);
+    const float scale = letterbox_params.scale;
+    const float pad_x = static_cast<float>(letterbox_params.pad_x);
+    const float pad_y = static_cast<float>(letterbox_params.pad_y);
 
     for (int y = 0; y < dst_height; ++y) {
+        const float py = (y * scale + pad_y) * my;
+        int src_y = static_cast<int>(py);
+        if (src_y < 0 || src_y >= src_height) continue;
         for (int x = 0; x < dst_width; ++x) {
-            int src_x = static_cast<int>(x * scale_x);
-            int src_y = static_cast<int>(y * scale_y);
-            src_x = std::min(src_x, src_width - 1);
-            src_y = std::min(src_y, src_height - 1);
+            const float px = (x * scale + pad_x) * mx;
+            int src_x = static_cast<int>(px);
+            if (src_x < 0 || src_x >= src_width) continue;
             resized[y * dst_width + x] = mask[src_y * src_width + src_x];
         }
     }

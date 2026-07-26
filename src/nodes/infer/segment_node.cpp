@@ -208,13 +208,19 @@ void SegmentNode::postprocess(Frame& frame, const Tensor& det_output,
                               const Tensor& proto_output,
                               const LetterboxParams& letterbox_params,
                               int orig_width, int orig_height) {
+    SegmentConfig config;
+    {
+        std::lock_guard<std::mutex> lock(params_mutex_);
+        config = config_;
+    }
+
     SegMaskParams params;
-    params.score_threshold = config_.score_threshold;
-    params.nms_threshold = config_.nms_threshold;
-    params.mask_threshold = config_.mask_threshold;
-    params.max_detections = config_.max_detections;
-    params.input_width = config_.input_width;
-    params.input_height = config_.input_height;
+    params.score_threshold = config.score_threshold;
+    params.nms_threshold = config.nms_threshold;
+    params.mask_threshold = config.mask_threshold;
+    params.max_detections = config.max_detections;
+    params.input_width = config.input_width;
+    params.input_height = config.input_height;
 
     std::vector<std::vector<uint8_t>> masks;
     SegMaskDecoder::decode(det_output, proto_output, frame.detections, masks,

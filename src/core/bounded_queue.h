@@ -20,11 +20,11 @@ enum class OverflowPolicy {
 
 /// @brief 队列统计信息
 struct QueueStats {
-    size_t capacity;           ///< 队列容量
-    size_t current_size;       ///< 当前元素数量
-    uint64_t total_pushed;     ///< 累计入队次数
-    uint64_t total_popped;     ///< 累计出队次数
-    uint64_t dropped_count;    ///< 累计丢弃次数
+    size_t capacity = 0;
+    size_t current_size = 0;
+    uint64_t total_pushed = 0;
+    uint64_t total_popped = 0;
+    uint64_t dropped_count = 0;
 };
 
 /// @brief 线程安全的有界队列

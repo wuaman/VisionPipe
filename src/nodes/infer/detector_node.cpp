@@ -229,10 +229,16 @@ LetterboxParams DetectorNode::preprocess(Frame& frame, Tensor& input_tensor) {
 void DetectorNode::postprocess(Frame& frame, const Tensor& output,
                                const LetterboxParams& letterbox_params,
                                int orig_width, int orig_height) {
+    DetectorConfig config;
+    {
+        std::lock_guard<std::mutex> lock(params_mutex_);
+        config = config_;
+    }
+
     NmsParams nms_params;
-    nms_params.score_threshold = config_.score_threshold;
-    nms_params.iou_threshold = config_.nms_threshold;
-    nms_params.max_detections = config_.max_detections;
+    nms_params.score_threshold = config.score_threshold;
+    nms_params.iou_threshold = config.nms_threshold;
+    nms_params.max_detections = config.max_detections;
 
     DetectionDecoder::decode(output, frame.detections, nms_params,
                              letterbox_params, orig_width, orig_height);

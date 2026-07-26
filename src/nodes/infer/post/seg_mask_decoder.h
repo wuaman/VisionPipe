@@ -108,9 +108,15 @@ private:
                           const LetterboxParams& params,
                           int orig_width, int orig_height);
 
-    /// @brief 缩放 mask 到原图尺寸
+    /// @brief 缩放 mask 到原图尺寸（letterbox 逆映射）
+    ///
+    /// 原型掩码对应的是 letterbox 后的模型输入（含 padding），必须先去
+    /// padding 再除 scale 才能对齐原图——与 bbox 的 map_bbox_back 同一套几何。
+    /// 直接整图拉伸会导致掩码相对目标整体偏移/压扁。
     static void resize_mask(std::vector<uint8_t>& mask,
                             int src_width, int src_height,
+                            const LetterboxParams& letterbox_params,
+                            int input_width, int input_height,
                             int dst_width, int dst_height);
 };
 
