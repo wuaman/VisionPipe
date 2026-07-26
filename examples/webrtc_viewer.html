@@ -2,39 +2,243 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>VisionPipe-py WebRTC Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VisionPipe WebRTC Viewer</title>
 <style>
-  body { font-family: -apple-system, "Segoe UI", sans-serif; background: #1e1e1e; color: #ddd; margin: 0; padding: 16px; }
-  h1 { margin: 0 0 12px 0; font-size: 18px; }
-  .meta { font-size: 13px; color: #999; margin-bottom: 8px; }
-  .meta code { background: #2d2d2d; padding: 2px 6px; border-radius: 3px; color: #6cf; }
-  #v { background: #000; border: 1px solid #444; max-width: 100%; height: auto; display: block; }
-  #status-bar { margin-top: 8px; font-size: 14px; display: flex; gap: 12px; align-items: center; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: #888; display: inline-block; }
-  .dot.connecting { background: #fc0; animation: pulse 1s infinite; }
-  .dot.connected { background: #0c8; }
-  .dot.failed { background: #f44; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  button { padding: 6px 14px; background: #2d6cdf; color: white; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; }
-  button:hover { background: #4480e8; }
-  #log { margin-top: 12px; max-height: 180px; overflow-y: auto; background: #2d2d2d; padding: 8px 12px; border-radius: 4px; font-family: monospace; font-size: 11px; line-height: 1.5; }
-  .log-line { color: #aaa; }
-  .log-err { color: #f88; }
+:root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c232d;
+  --line: #30363d;
+  --line-soft: #21262d;
+  --text: #e6edf3;
+  --text2: #8b949e;
+  --text3: #6e7681;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --cyan: #76e3ea;
+  --radius: 6px;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.topbar h1 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .04em; }
+.topbar .sub { color: var(--text3); font-size: 12px; }
+.topbar .actions { margin-left: auto; display: flex; gap: 8px; }
+button {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  transition: background .12s, border-color .12s;
+}
+button:hover { background: #262d38; border-color: #3d444d; }
+button.primary { border-color: rgba(88, 166, 255, .4); color: var(--accent); }
+button.primary:hover { background: rgba(88, 166, 255, .1); }
+
+.shell { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; flex: 1; min-height: 0; padding: 14px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--text2);
+}
+.card-body { flex: 1; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
+
+.stage { min-width: 0; }
+.video-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: #010409;
+  border: 1px solid var(--line-soft);
+}
+video { width: 100%; height: 100%; min-height: 420px; display: block; object-fit: contain; background: #010409; }
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--text2);
+  text-align: center;
+  background: rgba(1, 4, 9, .5);
+}
+.overlay.hidden { display: none; }
+.loader {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  animation: spin 1s linear infinite;
+  margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.stage-footer { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding-top: 10px; flex-wrap: wrap; }
+.status { display: inline-flex; align-items: center; gap: 8px; color: var(--text2); font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); }
+.dot.connecting { background: var(--yellow); box-shadow: 0 0 5px rgba(210, 153, 34, .6); }
+.dot.connected { background: var(--green); box-shadow: 0 0 5px rgba(63, 185, 80, .7); }
+.dot.failed { background: var(--red); box-shadow: 0 0 5px rgba(248, 81, 73, .6); }
+.metrics { display: flex; gap: 8px; flex-wrap: wrap; }
+.metric {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 5px 10px;
+  min-width: 88px;
+}
+.metric span { display: block; color: var(--text3); font-size: 10px; letter-spacing: .08em; }
+.metric strong { font-size: 13px; font-family: var(--mono); font-weight: 600; }
+
+.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.kv { display: grid; gap: 8px; }
+.kv-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; font-size: 12px; align-items: baseline; }
+.kv-row > span { color: var(--text3); }
+.kv-row .note { color: var(--text2); line-height: 1.55; }
+code {
+  color: var(--cyan);
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  word-break: break-all;
+}
+.log-card { flex: 1; }
+.log {
+  flex: 1;
+  min-height: 260px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: #010409;
+  border: 1px solid var(--line-soft);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+.log-line { color: var(--text2); }
+.log-line .ts { color: var(--text3); }
+.log-err { color: var(--red); }
+.log-err .ts { color: var(--text3); }
+
+@media (max-width: 1024px) {
+  .shell { grid-template-columns: 1fr; }
+  .topbar { flex-wrap: wrap; }
+  .topbar .actions { margin-left: 0; width: 100%; }
+}
 </style>
 </head>
 <body>
-<h1>VisionPipe-py · WebRTC Viewer</h1>
-<div class="meta">
-  Pipeline ID: <code id="pid-label">(loading)</code>
-  · Signaling: <code id="ws-label">(loading)</code>
-</div>
-<video id="v" autoplay playsinline muted width="1280" height="720"></video>
-<div id="status-bar">
-  <span class="dot" id="dot"></span>
-  <span id="status">连接中...</span>
-  <button id="reconnect">Reconnect</button>
-</div>
-<div id="log"></div>
+<header class="topbar">
+  <div class="brand-mark">VP</div>
+  <h1>WebRTC 实时预览</h1>
+  <span class="sub">低延迟查看 AnnotatorNode 输出的检测框 / 跟踪 ID / 掩码</span>
+  <div class="actions">
+    <button class="primary" id="reconnect">重新连接</button>
+    <button id="copy-ws">复制信令地址</button>
+  </div>
+</header>
+
+<main class="shell">
+  <section class="card stage">
+    <div class="card-head"><span>视频流</span><span id="head-pid" style="font-family:var(--mono);letter-spacing:0"></span></div>
+    <div class="card-body">
+      <div class="video-wrap">
+        <video id="v" autoplay playsinline muted></video>
+        <div class="overlay" id="overlay">
+          <div>
+            <div class="loader"></div>
+            <div id="overlay-text">正在建立 WebRTC 连接...</div>
+          </div>
+        </div>
+      </div>
+      <div class="stage-footer">
+        <div class="status"><span class="dot" id="dot"></span><span id="status">准备连接...</span></div>
+        <div class="metrics">
+          <div class="metric"><span>传输</span><strong>WebRTC</strong></div>
+          <div class="metric"><span>分辨率</span><strong id="res">--</strong></div>
+          <div class="metric"><span>ICE 状态</span><strong id="ice">--</strong></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="card">
+      <div class="card-head"><span>连接信息</span></div>
+      <div class="card-body">
+        <div class="kv">
+          <div class="kv-row"><span>Pipeline</span><code id="pid-label">(loading)</code></div>
+          <div class="kv-row"><span>Signaling</span><code id="ws-label">(loading)</code></div>
+          <div class="kv-row"><span>说明</span><div class="note">如果长时间停在连接中，请检查浏览器 Console、服务端日志和 WebRTC 构建参数。</div></div>
+        </div>
+      </div>
+    </section>
+    <section class="card log-card">
+      <div class="card-head"><span>事件日志</span></div>
+      <div class="card-body"><div class="log" id="log"></div></div>
+    </section>
+  </aside>
+</main>
 <script>
 (function () {
   const params = new URLSearchParams(window.location.search);
@@ -42,14 +246,20 @@
   const wsScheme = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${wsScheme}//${window.location.host}/ws/${pid}/webrtc`;
 
-  document.getElementById("pid-label").textContent = pid || "(missing ?pid= query param)";
-  document.getElementById("ws-label").textContent = wsUrl;
-
   const video = document.getElementById("v");
   const dot = document.getElementById("dot");
   const statusEl = document.getElementById("status");
   const logEl = document.getElementById("log");
   const reconnectBtn = document.getElementById("reconnect");
+  const copyBtn = document.getElementById("copy-ws");
+  const overlay = document.getElementById("overlay");
+  const overlayText = document.getElementById("overlay-text");
+  const resEl = document.getElementById("res");
+  const iceEl = document.getElementById("ice");
+
+  document.getElementById("pid-label").textContent = pid || "(missing ?pid= query param)";
+  document.getElementById("ws-label").textContent = wsUrl;
+  document.getElementById("head-pid").textContent = pid;
 
   let pc = null;
   let ws = null;
@@ -58,7 +268,11 @@
     const ts = new Date().toISOString().substring(11, 23);
     const line = document.createElement("div");
     line.className = isErr ? "log-err" : "log-line";
-    line.textContent = `[${ts}] ${msg}`;
+    const tsSpan = document.createElement("span");
+    tsSpan.className = "ts";
+    tsSpan.textContent = `[${ts}] `;
+    line.appendChild(tsSpan);
+    line.appendChild(document.createTextNode(msg));
     logEl.appendChild(line);
     logEl.scrollTop = logEl.scrollHeight;
   }
@@ -66,6 +280,8 @@
   function setStatus(text, kind) {
     statusEl.textContent = text;
     dot.className = "dot " + (kind || "");
+    overlayText.textContent = text;
+    overlay.classList.toggle("hidden", kind === "connected" && video.readyState >= 2);
   }
 
   function start() {
@@ -77,62 +293,54 @@
     setStatus("连接信令中...", "connecting");
     log(`connecting to ${wsUrl}`);
 
-    pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-    });
-
-    pc.ontrack = (e) => {
-      video.srcObject = e.streams[0];
-      setStatus("已连接 (waiting for first frame)", "connected");
-      log(`ontrack: ${e.track.kind} (${e.streams[0].id})`);
+    pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    pc.ontrack = (event) => {
+      video.srcObject = event.streams[0];
+      setStatus("已收到视频轨，等待首帧...", "connected");
+      log(`ontrack: ${event.track.kind} (${event.streams[0].id})`);
     };
-
     pc.oniceconnectionstatechange = () => {
+      iceEl.textContent = pc.iceConnectionState;
       log(`ICE state: ${pc.iceConnectionState}`);
-      if (pc.iceConnectionState === "failed") {
-        setStatus("ICE 连接失败", "failed");
+      if (["failed", "disconnected", "closed"].includes(pc.iceConnectionState)) {
+        setStatus(`ICE ${pc.iceConnectionState}`, "failed");
       }
     };
-
-    pc.onicecandidate = (e) => {
-      if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+    pc.onconnectionstatechange = () => log(`PeerConnection state: ${pc.connectionState}`);
+    pc.onicecandidate = (event) => {
+      if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: "candidate",
-          candidate: e.candidate.candidate,
-          sdpMid: e.candidate.sdpMid
+          candidate: event.candidate.candidate,
+          sdpMid: event.candidate.sdpMid
         }));
       }
     };
 
     ws = new WebSocket(wsUrl);
     ws.onopen = () => log("WebSocket opened");
-    ws.onclose = (e) => {
-      log(`WebSocket closed (code=${e.code})`, e.code !== 1000);
-      if (e.code === 4004) setStatus("Pipeline 不存在或无 WebRTCSink (4004)", "failed");
+    ws.onclose = (event) => {
+      log(`WebSocket closed (code=${event.code})`, event.code !== 1000);
+      if (event.code === 4004) setStatus("Pipeline 不存在或没有 WebRTCSink", "failed");
     };
     ws.onerror = () => log("WebSocket error", true);
     ws.onmessage = async (msg) => {
-      const d = JSON.parse(msg.data);
-      if (d.type === "offer") {
+      const data = JSON.parse(msg.data);
+      if (data.type === "offer") {
         log("← SDP offer received");
-        await pc.setRemoteDescription({ type: "offer", sdp: d.sdp });
-        const ans = await pc.createAnswer();
-        await pc.setLocalDescription(ans);
-        ws.send(JSON.stringify({ type: "answer", sdp: ans.sdp }));
+        await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: "answer", sdp: answer.sdp }));
         log("→ SDP answer sent");
-      } else if (d.type === "candidate") {
+      } else if (data.type === "candidate") {
         try {
-          await pc.addIceCandidate({ candidate: d.candidate, sdpMid: d.sdpMid });
+          await pc.addIceCandidate({ candidate: data.candidate, sdpMid: data.sdpMid });
         } catch (err) {
           log(`addIceCandidate error: ${err.message}`, true);
         }
       }
     };
-
-    video.addEventListener("loadeddata", () => {
-      setStatus("playing", "connected");
-      log(`first frame decoded (${video.videoWidth}x${video.videoHeight})`);
-    }, { once: true });
   }
 
   function teardown() {
@@ -141,12 +349,25 @@
     ws = null;
     pc = null;
     video.srcObject = null;
+    resEl.textContent = "--";
+    iceEl.textContent = "--";
+    overlay.classList.remove("hidden");
   }
+
+  video.addEventListener("loadeddata", () => {
+    resEl.textContent = `${video.videoWidth}×${video.videoHeight}`;
+    setStatus("WebRTC 正在播放", "connected");
+    log(`first frame decoded (${video.videoWidth}x${video.videoHeight})`);
+  });
 
   reconnectBtn.addEventListener("click", () => {
     log("manual reconnect");
     teardown();
     setTimeout(start, 200);
+  });
+  copyBtn.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(wsUrl);
+    log("signaling URL copied");
   });
 
   start();

@@ -1,14 +1,11 @@
 """VisionPipe-py ROI 热更新示例。
 
 演示运行时通过**管理通道** (WebSocket `/ws/<id>/control`) 动态修改
-DetectorNode 的检测 ROI 区域,效果通过浏览器实时观察。
+DetectorNode 的检测 ROI 区域,效果通过 **MJPEG 浏览器流** 实时观察。
 
-预览方式两选一 (--sink, 默认 mjpeg):
+Pipeline:
 
-    --sink mjpeg   FileSource → DetectorNode → AnnotatorNode → MjpegSink
-                   浏览器走 multipart/x-mixed-replace, 无需 WebRTC 构建
-    --sink webrtc  FileSource → DetectorNode → AnnotatorNode → WebRTCSink
-                   浏览器走 RTP/H.264, 延迟更低; 需 -DVISIONPIPE_USE_WEBRTC=ON
+    FileSource → DetectorNode(name="detector") → AnnotatorNode → MjpegSink
 
 ROI 切换序列 (默认 5 s 一档, 循环):
 
@@ -27,19 +24,15 @@ ROI 切换序列 (默认 5 s 一档, 循环):
 依赖资源:
 - 视频:  tests/data/48-3.mp4
 - 检测:  tests/models/yolov8n_dynamic.engine
-- --sink webrtc 额外需要: examples/webrtc_viewer.html (随仓库提供)
 
 运行
 ----
-    uv run python examples/roi_hotupdate_demo.py                 # 默认 MJPEG
-    uv run python examples/roi_hotupdate_demo.py --sink webrtc   # WebRTC 预览
+    uv run python examples/roi_hotupdate_demo.py
 
-启动后浏览器打开终端中打印的 viewer URL (内嵌 <img>/WebRTC <video>), 切换日志
-会每 5 s 在终端输出。Ctrl+C 退出。
-
-> 直接打 http://localhost:8080/mjpeg/<pid> 在某些 Chrome 版本下不渲染
-> (`multipart/x-mixed-replace` 兼容性问题); 这正是默认提供 `/viewer`
-> 内嵌 <img> 页面的原因。Firefox 直接访问通常正常。
+启动后:
+1. 浏览器打开 http://localhost:8080/mjpeg/<pipeline-id>
+2. 控制台每 5 s 打印 ROI 切换日志, 浏览器画面同步响应
+3. Ctrl+C 退出
 
 手动触发 (任意时刻另开终端运行)
 -------------------------------
@@ -58,10 +51,8 @@ ROI 切换序列 (默认 5 s 一档, 循环):
 
 参数
 ----
-    --sink {mjpeg,webrtc} 预览方式 (默认: mjpeg)
     --no-rotate           关闭自动轮换 (教学模式: 只起服务等手动触发)
     --interval FLOAT      自动轮换间隔秒数, 默认 5.0
-    --fps / --bitrate-kbps  仅 --sink webrtc 生效
 """
 
 from __future__ import annotations
@@ -77,7 +68,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import aiohttp
-from aiohttp import web
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON_DIR = REPO_ROOT / "python"
@@ -89,25 +79,6 @@ from visionpipe.server import ManagementServer  # noqa: E402
 
 DEFAULT_VIDEO = REPO_ROOT / "tests" / "data" / "48-3.mp4"
 DEFAULT_DET_ENGINE = REPO_ROOT / "tests" / "models" / "yolov8n_dynamic.engine"
-WEBRTC_VIEWER_HTML = Path(__file__).parent / "webrtc_viewer.html"
-
-MJPEG_VIEWER_HTML_TPL = """<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<title>VisionPipe-py ROI Hot-Update (MJPEG)</title>
-<style>
-  body {{ font-family: -apple-system,"Segoe UI",sans-serif; background:#1e1e1e; color:#ddd;
-         margin:0; padding:16px; }}
-  h1 {{ margin:0 0 10px 0; font-size:18px; }}
-  .meta {{ font-size:13px; color:#999; margin-bottom:8px; }}
-  .meta code {{ background:#2d2d2d; padding:2px 6px; border-radius:3px; color:#6cf; }}
-  img {{ background:#000; border:1px solid #444; max-width:100%; height:auto; display:block; }}
-</style></head><body>
-<h1>VisionPipe-py · ROI Hot-Update Viewer (MJPEG)</h1>
-<div class="meta">Pipeline ID: <code>{pid}</code> · Stream: <code>{stream_url}</code></div>
-<img src="{stream_url}" alt="MJPEG stream">
-<div class="meta" style="margin-top:8px">每 5 s 自动循环切换 ROI: clear → 左半屏 → 右半屏 → 中心三角形</div>
-</body></html>
-"""
 
 COCO_80 = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
@@ -176,41 +147,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--interval", type=float, default=5.0,
                         help="ROI 自动轮换间隔秒数 (默认: 5.0)")
     parser.add_argument("--score-threshold", type=float, default=0.25)
-    parser.add_argument("--sink", choices=["mjpeg", "webrtc"], default="mjpeg",
-                        help="预览方式: mjpeg (默认, 无需 WebRTC 构建) "
-                             "或 webrtc (需 -DVISIONPIPE_USE_WEBRTC=ON)")
-    parser.add_argument("--fps", type=int, default=15,
-                        help="--sink webrtc 时的编码帧率 (默认: 15)")
-    parser.add_argument("--bitrate-kbps", type=int, default=1500,
-                        help="--sink webrtc 时的视频码率 (默认: 1500)")
     parser.add_argument("--no-rotate", action="store_true",
                         help="关闭自动轮换, 只启动服务等手动触发")
     return parser.parse_args()
 
 
 def check_assets(args: argparse.Namespace) -> None:
-    required = [args.video, args.det_engine]
-    if args.sink == "webrtc":
-        required.append(WEBRTC_VIEWER_HTML)
-    missing = [p for p in required if not p.exists()]
+    missing = [p for p in (args.video, args.det_engine) if not p.exists()]
     if missing:
         _say("缺少必要资源:")
         for p in missing:
             _say(f"  - {p}")
         sys.exit(2)
-
-
-def check_webrtc_build() -> None:
-    """启动前确认扩展带 WebRTC; stub 模式会让浏览器一直 connecting。"""
-    probe = visionpipe.WebRTCSink()
-    peer_id = probe.create_peer()
-    if not peer_id:
-        _say("ERROR: WebRTCSink 是 stub 模式 (未启用 -DVISIONPIPE_USE_WEBRTC=ON)。")
-        _say("请重新构建后再用 --sink webrtc:")
-        _say("    cmake -B build -DVISIONPIPE_USE_WEBRTC=ON")
-        _say("    cmake --build build --target visionpipe_python")
-        sys.exit(3)
-    probe.remove_peer(peer_id)
 
 
 def build_pipeline(args: argparse.Namespace) -> visionpipe.Pipeline:
@@ -235,19 +183,10 @@ def build_pipeline(args: argparse.Namespace) -> visionpipe.Pipeline:
     ann_cfg.class_names = COCO_80
     annotator = visionpipe.AnnotatorNode(ann_cfg, "annotator")
 
-    if args.sink == "webrtc":
-        rtc_cfg = visionpipe.WebRTCSinkConfig()
-        rtc_cfg.fps = args.fps
-        rtc_cfg.video_bitrate_kbps = args.bitrate_kbps
-        rtc_cfg.keyframe_interval = max(args.fps * 2, 30)
-        rtc_cfg.use_nvenc = True
-        rtc_cfg.stun_server = "stun:stun.l.google.com:19302"
-        sink = visionpipe.WebRTCSink(rtc_cfg, "webrtc_sink")
-    else:
-        sink_cfg = visionpipe.MjpegSinkConfig()
-        sink_cfg.jpeg_quality = 80
-        sink_cfg.buffer_capacity = 4
-        sink = visionpipe.MjpegSink(sink_cfg, "mjpeg")
+    sink_cfg = visionpipe.MjpegSinkConfig()
+    sink_cfg.jpeg_quality = 80
+    sink_cfg.buffer_capacity = 4
+    sink = visionpipe.MjpegSink(sink_cfg, "mjpeg")
 
     return source >> detector >> annotator >> sink
 
@@ -302,13 +241,10 @@ def _serve_in_thread(server: ManagementServer, loop: asyncio.AbstractEventLoop,
 def main() -> int:
     args = parse_args()
     check_assets(args)
-    if args.sink == "webrtc":
-        check_webrtc_build()
 
     _say(f"[roi-demo] 视频     : {args.video}")
     _say(f"[roi-demo] 检测     : {args.det_engine}")
     _say(f"[roi-demo] 切换间隔 : {args.interval:.1f}s (--no-rotate: {args.no_rotate})")
-    _say(f"[roi-demo] 预览方式 : {args.sink}")
     _say("")
 
     manager = visionpipe.PipelineManager()
@@ -317,26 +253,6 @@ def main() -> int:
     manager.start(pipeline_id)
 
     server = ManagementServer(manager, host=args.host, port=args.port)
-
-    # 根据 sink 类型挂内嵌 viewer 页面 (规避浏览器对 multipart 的兼容问题
-    # 以及 WebRTC 需要 HTML 信令 client)
-    if args.sink == "mjpeg":
-        stream_path = f"/mjpeg/{pipeline_id}"
-
-        async def _mjpeg_index(_req: web.Request) -> web.Response:
-            html = MJPEG_VIEWER_HTML_TPL.format(pid=pipeline_id, stream_url=stream_path)
-            return web.Response(text=html, content_type="text/html", charset="utf-8")
-
-        server._app.router.add_get("/", _mjpeg_index)
-        server._app.router.add_get("/viewer", _mjpeg_index)
-    else:
-        async def _webrtc_index(_req: web.Request) -> web.Response:
-            html = WEBRTC_VIEWER_HTML.read_text(encoding="utf-8")
-            return web.Response(text=html, content_type="text/html", charset="utf-8")
-
-        server._app.router.add_get("/", _webrtc_index)
-        server._app.router.add_get("/viewer", _webrtc_index)
-
     server_loop = asyncio.new_event_loop()
     ready = threading.Event()
     server_thread = threading.Thread(
@@ -351,19 +267,11 @@ def main() -> int:
     display_host = "localhost" if args.host in ("0.0.0.0", "127.0.0.1") else args.host
     base_http = f"http://{display_host}:{args.port}"
     base_ws = f"ws://{display_host}:{args.port}"
-    if args.sink == "mjpeg":
-        viewer_url = f"{base_http}/viewer"
-        stream_url = f"{base_http}/mjpeg/{pipeline_id}"
-        stream_label = "MJPEG 原始流"
-    else:
-        viewer_url = f"{base_http}/?pid={pipeline_id}"
-        stream_url = f"{base_ws}/ws/{pipeline_id}/webrtc"
-        stream_label = "WebRTC 信令"
+    mjpeg_url = f"{base_http}/mjpeg/{pipeline_id}"
 
     _say("=" * 70)
-    _say(f"  Pipeline ID  : {pipeline_id}")
-    _say(f"  浏览器 viewer : {viewer_url}")
-    _say(f"  {stream_label:<12s} : {stream_url}")
+    _say(f"  Pipeline ID : {pipeline_id}")
+    _say(f"  MJPEG 视频  : {mjpeg_url}")
     _say("=" * 70)
     _say("")
     _say("手动触发 ROI 切换 (任意时刻):")

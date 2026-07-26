@@ -17,6 +17,7 @@ test additionally skips when no TRT engine asset is available.
 
 from __future__ import annotations
 
+import asyncio
 import gc
 import json
 import sys
@@ -70,6 +71,8 @@ requires_trt = pytest.mark.skipif(
 )
 
 TEST_VIDEO = ROOT / "tests" / "data" / "48-3.mp4"
+if not TEST_VIDEO.exists() or TEST_VIDEO.is_symlink():
+    TEST_VIDEO = ROOT / "tests" / "data" / "test_video_100frames.mp4"
 
 
 # ---------------------------------------------------------------------------
@@ -387,3 +390,62 @@ def test_concurrent_pipeline_lifecycle_states() -> None:
         )
     finally:
         _safe_stop_destroy(manager, [id1, id2])
+
+
+# ---------------------------------------------------------------------------
+# Standalone demo: run with `python test_multi_pipeline.py` to launch
+# ManagementServer + Dashboard with two concurrent pipelines.
+# ---------------------------------------------------------------------------
+
+def _run_demo() -> None:
+    """Launch two pipelines under ManagementServer for Dashboard visualization."""
+    from visionpipe.server.management_api import ManagementServer
+
+    if not TEST_VIDEO.exists():
+        print(f"ERROR: Test video not found: {TEST_VIDEO}")
+        print("Run: bash tests/data/download_test_assets.sh")
+        sys.exit(1)
+
+    video = str(TEST_VIDEO)
+    manager = visionpipe.PipelineManager()
+
+    pipe1, inject1, sink1 = _build_inject_pipeline(
+        video, [0, 1, 2], "physics", loop_source=True
+    )
+    pipe2, inject2, sink2 = _build_inject_pipeline(
+        video, [10, 11, 12], "chemistry", loop_source=True
+    )
+
+    id1 = manager.create_pipeline(pipe1)
+    id2 = manager.create_pipeline(pipe2)
+    manager.start(id1)
+    manager.start(id2)
+
+    print(f"Pipeline 'physics'   ID={id1}  [class_ids: 0,1,2]")
+    print(f"Pipeline 'chemistry' ID={id2}  [class_ids: 10,11,12]")
+    print()
+    print("Dashboard: http://localhost:8080/dashboard")
+    print("Press Ctrl+C to stop.")
+
+    async def serve():
+        server = ManagementServer(manager, host="0.0.0.0", port=8080)
+        await server.start()
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await server.stop()
+
+    try:
+        asyncio.run(serve())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        _safe_stop_destroy(manager, [id1, id2])
+        print("\nPipelines stopped. Bye.")
+
+
+if __name__ == "__main__":
+    _run_demo()

@@ -7,7 +7,7 @@
 | `quickstart.py` | 最小可运行 pipeline | Source + Detector + JsonResultSink | 控制台 JSON |
 | `multi_pipeline_demo.py` | 多 Pipeline 并发 + 生命周期隔离 + ModelRegistry 显存复用 | 两条并行链 | 控制台 FPS / 类别统计 |
 | `webrtc_demo.py` | 检测 + **二阶段分类** + 追踪 + 浏览器实时视频 | Detector + Classifier + ByteTrack + Annotator + WebRTCSink | 浏览器 (WebRTC) |
-| `roi_hotupdate_demo.py` | 运行时 **ROI 热更新**, 管理通道 (REST/WS) + 实时观察 | Detector + Annotator + MjpegSink/WebRTCSink | 浏览器 (MJPEG 默认 / `--sink webrtc`) |
+| `roi_hotupdate_demo.py` | 运行时 **ROI 热更新**, 管理通道 (REST/WS) + 实时观察 | Detector + Annotator + MjpegSink | 浏览器 (MJPEG) |
 
 ---
 
@@ -81,22 +81,12 @@ uv run python examples/webrtc_demo.py \
 
 ## 示例 4: `roi_hotupdate_demo.py` (ROI 热更新)
 
-启动后通过浏览器观察 ROI 切换效果。脚本会自动每 5 s 循环切换 ROI (无 ROI → 左半屏 → 右半屏 → 中心三角形 → 循环)。
-
-预览方式两选一 (`--sink`,默认 `mjpeg`):
+启动后通过 MJPEG 流观察 ROI 切换效果。脚本会自动每 5 s 循环切换 ROI (无 ROI → 左半屏 → 右半屏 → 中心三角形 → 循环)。
 
 ```bash
-# 方式 A: MJPEG (默认, 无需 WebRTC 构建)
 uv run python examples/roi_hotupdate_demo.py
-# → 浏览器: http://localhost:8080/viewer  (内嵌 <img> 包装, 兼容 Chrome)
-#   原始流: http://localhost:8080/mjpeg/<pid>  (Firefox 可直接访问)
-
-# 方式 B: WebRTC (低延迟, 需 -DVISIONPIPE_USE_WEBRTC=ON)
-uv run python examples/roi_hotupdate_demo.py --sink webrtc
-# → 浏览器: http://localhost:8080/?pid=<pid>
+# → 浏览器: http://localhost:8080/mjpeg/<打印出的 pipeline-id>
 ```
-
-> 直接打 `/mjpeg/<pid>` 在 Chrome 下经常不渲染 (`multipart/x-mixed-replace` 兼容问题),所以脚本默认提供 `/viewer` 内嵌页面;用 `curl -s .../mjpeg/<pid> | head -c 200 | xxd` 可验证字节流是否正常。
 
 **手动触发** (任意时刻另开终端,把 `<pid>` 替换为实际值):
 
@@ -127,7 +117,6 @@ uv run python examples/roi_hotupdate_demo.py --no-rotate
 |---|---|
 | WebRTC 浏览器永远 connecting | 未启用 `-DVISIONPIPE_USE_WEBRTC=ON`;脚本会在启动时检测 stub 并报错退出 |
 | `InferError: ... fixed dimension mismatch` (classifier) | `efficientnet_b0_fp16.engine` 默认按 fixed batch=1 转换;保持 `--cls-max-batch=1` (默认) 或用 `DYNAMIC_BATCH=true ./models/efficientnet_b0/convert.sh` 重转 |
-| Chrome 打 `/mjpeg/<pid>` 一片空白 | 浏览器对 `multipart/x-mixed-replace` 处理不一致;改用脚本提供的 `/viewer` 内嵌页面,或 Firefox 直接访问,或 `--sink webrtc` |
 | MJPEG / WebRTC 卡顿、画面冻结 | 检查 GPU 占用、视频比特率、NVDEC/NVENC 并发上限 |
 | ROI 切了但检测框没变化 | 坐标必须**归一化**到 `[0, 1]`;像素坐标会被全部过滤导致 "看似全失效" |
 | ROI 设了但只过滤了部分 bbox | 命中判定是 **bbox 中心点** `pointPolygonTest`,边界目标会跳进跳出 |
