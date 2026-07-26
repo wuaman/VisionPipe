@@ -22,7 +22,7 @@
 #include "nodes/tracker/bytetrack_node.h"
 #include "nodes/infer/detector_node.h"
 #include "nodes/infer/classifier_node.h"
-#include "nodes/infer/segment_node.h"
+#include "nodes/infer/yolo_seg_node.h"
 #include "nodes/sink/json_result_sink.h"
 #include "nodes/sink/mjpeg_sink.h"
 #include "nodes/sink/webrtc_sink.h"
@@ -137,17 +137,17 @@ void bind_nodes(nb::module_& m) {
         .def("config", &ClassifierNode::config, nb::rv_policy::reference_internal)
         .def("worker_count", &ClassifierNode::worker_count);
 
-    nb::class_<SegmentNode, NodeBase>(m, "SegmentNode")
-        .def(nb::init<std::shared_ptr<IModelEngine>, const SegmentConfig&, const std::string&>(),
+    nb::class_<YoloSegNode, NodeBase>(m, "YoloSegNode")
+        .def(nb::init<std::shared_ptr<IModelEngine>, const YoloSegConfig&, const std::string&>(),
              nb::arg("engine"),
-             nb::arg("config") = SegmentConfig(),
-             nb::arg("name") = "segment")
+             nb::arg("config") = YoloSegConfig(),
+             nb::arg("name") = "yolo_seg")
         .def(nb::init<std::shared_ptr<IModelEngine>, const std::string&>(),
              nb::arg("engine"),
              nb::arg("name"))
-        .def("config", &SegmentNode::config, nb::rv_policy::reference_internal)
-        .def("worker_count", &SegmentNode::worker_count)
-        .def("last_masks", &SegmentNode::last_masks, nb::rv_policy::reference_internal);
+        .def("config", &YoloSegNode::config, nb::rv_policy::reference_internal)
+        .def("worker_count", &YoloSegNode::worker_count)
+        .def("last_masks", &YoloSegNode::last_masks, nb::rv_policy::reference_internal);
 
     nb::class_<JsonResultSinkConfig>(m, "JsonResultSinkConfig")
         .def(nb::init<>())

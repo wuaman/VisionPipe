@@ -268,21 +268,21 @@ def test_whole_image_classify_shufflenet_produces_real_logits():
 # --- 5) YOLOv8m-seg real instance segmentation ---
 
 def test_yolov8m_seg_real_inference_produces_detections_and_masks():
-    """Real YOLOv8m-seg: FileSource → SegmentNode → Collector.
+    """Real YOLOv8m-seg: FileSource → YoloSegNode → Collector.
     Asserts both frame.detections (with valid bbox/conf/class) and frame.masks populate.
     """
     _require(VIDEO, SEG_ENGINE)
 
     src = _make_source(str(VIDEO))
 
-    seg_cfg = vp.SegmentConfig()
+    seg_cfg = vp.YoloSegConfig()
     seg_cfg.input_width = 640
     seg_cfg.input_height = 640
     seg_cfg.score_threshold = 0.25
     seg_cfg.nms_threshold = 0.45
     seg_cfg.mask_threshold = 0.5
     seg_engine = vp.TrtModelEngine(str(SEG_ENGINE))
-    seg = vp.SegmentNode(seg_engine, seg_cfg, "seg")
+    seg = vp.YoloSegNode(seg_engine, seg_cfg, "seg")
 
     collector = _Collector("tail")
 

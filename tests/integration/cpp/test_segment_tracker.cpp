@@ -1,5 +1,5 @@
 // test_segment_tracker.cpp
-// T2.5 集成测试：SegmentNode + ByteTrackNode 联合验证
+// T2.5 集成测试：YoloSegNode + ByteTrackNode 联合验证
 
 #include <gtest/gtest.h>
 
@@ -13,7 +13,7 @@
 #include "core/tensor.h"
 #include "hal/imodel_engine.h"
 #include "nodes/infer/post/seg_mask_decoder.h"
-#include "nodes/infer/segment_node.h"
+#include "nodes/infer/yolo_seg_node.h"
 #include "nodes/tracker/bytetrack_node.h"
 
 namespace visionpipe {
@@ -110,7 +110,7 @@ Frame make_frame(int64_t id, int w = 640, int h = 640) {
 
 std::vector<Frame> run_segment_pipeline(
     std::shared_ptr<IModelEngine> engine, int num_frames) {
-    auto seg = std::make_shared<SegmentNode>(engine, SegmentConfig(), "seg_it");
+    auto seg = std::make_shared<YoloSegNode>(engine, YoloSegConfig(), "seg_it");
     auto input_q = std::make_unique<BoundedQueue<Frame>>(32, OverflowPolicy::BLOCK);
     seg->set_input_queue(input_q.get());
     seg->create_output_queue(32, OverflowPolicy::BLOCK);

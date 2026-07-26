@@ -2,10 +2,10 @@
 
 演示 YOLOv8-seg 实例分割全链路:
 
-    FileSource → SegmentNode → ByteTrackNode → AnnotatorNode → WebRTCSink → 浏览器
+    FileSource → YoloSegNode → ByteTrackNode → AnnotatorNode → WebRTCSink → 浏览器
 
 其中:
-- SegmentNode 输出检测框 (frame.detections) + 实例掩码 (frame.masks) 双输出
+- YoloSegNode 输出检测框 (frame.detections) + 实例掩码 (frame.masks) 双输出
 - ByteTrackNode 给每个 detection 加 track_id
 - AnnotatorNode 以 draw_masks=True 叠加半透明掩码 + 检测框 + 跟踪 ID
 - WebRTCSink 用 NVENC 编码 H.264 经 libdatachannel 推流
@@ -137,12 +137,12 @@ def build_pipeline(args: argparse.Namespace) -> visionpipe.Pipeline:
 
     # Segment (检测框 + 实例掩码双输出)
     seg_engine = visionpipe.TrtModelEngine(str(args.seg_engine))
-    seg_cfg = visionpipe.SegmentConfig()
+    seg_cfg = visionpipe.YoloSegConfig()
     seg_cfg.input_width = 640
     seg_cfg.input_height = 640
     seg_cfg.score_threshold = args.score_threshold
     seg_cfg.mask_threshold = args.mask_threshold
-    segment = visionpipe.SegmentNode(seg_engine, seg_cfg, "segment")
+    segment = visionpipe.YoloSegNode(seg_engine, seg_cfg, "segment")
 
     # Tracker
     trk_cfg = visionpipe.ByteTrackConfig()

@@ -79,7 +79,7 @@ uv run mypy python/
 ├───────────────────────────────────────────────────────────────┤
 │                       节点库层                                  │
 │  Source: FileSource, RtspSource (cv::cudacodec NVDEC)          │
-│  Infer:  DetectorNode, ClassifierNode, SegmentNode             │
+│  Infer:  DetectorNode, ClassifierNode, YoloSegNode             │
 │  Track:  ByteTrackNode                                         │
 │  Sink:   JsonResultSink, MjpegSink, WebRTCSink                 │
 │  Viz:    AnnotatorNode                                         │
@@ -114,7 +114,7 @@ uv run mypy python/
 | `RtspSource` | `src/nodes/source/rtsp_source.h` | `SourceConfig` | RTSP 流解码 |
 | `DetectorNode` | `src/nodes/infer/detector_node.h` | `DetectorConfig` | YOLOv8 目标检测 + NMS，支持 set_roi/clear_roi 热更新 |
 | `ClassifierNode` | `src/nodes/infer/classifier_node.h` | `ClassifierConfig` | 裁切+分类推理 |
-| `SegmentNode` | `src/nodes/infer/segment_node.h` | `SegmentConfig` | YOLOv8-seg 实例分割（检测+掩码双输出） |
+| `YoloSegNode` | `src/nodes/infer/yolo_seg_node.h` | `YoloSegConfig` | YOLOv8/11-seg 实例分割（检测+掩码双输出），旧名 SegmentNode 保留为 Python 别名 |
 | `ByteTrackNode` | `src/nodes/tracker/bytetrack_node.h` | `ByteTrackConfig` | CPU 多目标跟踪 |
 | `AnnotatorNode` | `src/nodes/visualize/annotator_node.h` | `AnnotatorConfig` | 可视化标注（检测框/轨迹/掩码） |
 | `JsonResultSink` | `src/nodes/sink/json_result_sink.h` | `JsonResultSinkConfig` | JSON 结构化输出（内部队列 + pop_json） |
@@ -141,9 +141,9 @@ VisionPipeError (runtime_error)
 
 - **枚举**: PipelineState, PipelineStatus, NodeState, OverflowPolicy, DecodeMode
 - **数据**: Frame, Detection, Track, QueueStats, NodeStats, PipelineConfig, PipelineStats
-- **配置**: SourceConfig, DetectorConfig, ClassifierConfig, SegmentConfig, ByteTrackConfig, AnnotatorConfig, JsonResultSinkConfig, MjpegSinkConfig, WebRTCSinkConfig
+- **配置**: SourceConfig, DetectorConfig, ClassifierConfig, YoloSegConfig, ByteTrackConfig, AnnotatorConfig, JsonResultSinkConfig, MjpegSinkConfig, WebRTCSinkConfig
 - **引擎**: IModelEngine, MockModelEngine, TrtModelEngine
-- **节点**: NodeBase, FileSource, RtspSource, DetectorNode, ClassifierNode, SegmentNode, ByteTrackNode, AnnotatorNode, JsonResultSink, MjpegSink, WebRTCSink
+- **节点**: NodeBase, FileSource, RtspSource, DetectorNode, ClassifierNode, YoloSegNode, ByteTrackNode, AnnotatorNode, JsonResultSink, MjpegSink, WebRTCSink
 - **管道**: Pipeline, PipelineBuilder, PipelineManager
 
 Python 层额外提供：
@@ -182,7 +182,7 @@ tests/
 │   │   ├── test_model_registry.cpp
 │   │   ├── test_parallel_workers.cpp
 │   │   ├── test_bytetrack_node.cpp
-│   │   └── test_segment_node.cpp
+│   │   └── test_yolo_seg_node.cpp
 │   └── python/       # pytest
 │       ├── test_bindings.py
 │       ├── test_py_node.py

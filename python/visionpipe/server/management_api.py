@@ -484,7 +484,7 @@ class ManagementServer:
                 if not engine_path:
                     raise ValueError(f"Node '{ns.name}' (segment) requires 'engine_path' in params")
                 engine = visionpipe.TrtModelEngine(engine_path)
-                cfg = visionpipe.SegmentConfig()
+                cfg = visionpipe.YoloSegConfig()
                 cfg.input_width = p.get("input_width", 640)
                 cfg.input_height = p.get("input_height", 640)
                 cfg.score_threshold = p.get("score_threshold", 0.25)
@@ -492,7 +492,7 @@ class ManagementServer:
                 cfg.mask_threshold = p.get("mask_threshold", 0.5)
                 cfg.max_detections = p.get("max_detections", 100)
                 cfg.workers = p.get("workers", 1)
-                node_map[ns.name] = visionpipe.SegmentNode(engine, cfg, ns.name)
+                node_map[ns.name] = visionpipe.YoloSegNode(engine, cfg, ns.name)
             elif ns.type == "bytetrack":
                 cfg = visionpipe.ByteTrackConfig()
                 cfg.track_thresh = p.get("track_thresh", 0.5)

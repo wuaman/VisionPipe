@@ -1,4 +1,4 @@
-#include "segment_node.h"
+#include "yolo_seg_node.h"
 
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/cudaimgproc.hpp>
@@ -25,17 +25,17 @@ CudaAllocator* get_cuda_allocator() {
 
 }  // namespace
 
-SegmentNode::SegmentNode(std::shared_ptr<IModelEngine> engine,
-                         const SegmentConfig& config,
+YoloSegNode::YoloSegNode(std::shared_ptr<IModelEngine> engine,
+                         const YoloSegConfig& config,
                          const std::string& name)
     : InferNode(std::move(engine), config.workers, 1, std::chrono::milliseconds(5), name)
     , config_(config) {}
 
-SegmentNode::SegmentNode(std::shared_ptr<IModelEngine> engine,
+YoloSegNode::YoloSegNode(std::shared_ptr<IModelEngine> engine,
                          const std::string& name)
-    : SegmentNode(std::move(engine), SegmentConfig(), name) {}
+    : YoloSegNode(std::move(engine), YoloSegConfig(), name) {}
 
-bool SegmentNode::set_param(const std::string& name, const ParamValue& value) {
+bool YoloSegNode::set_param(const std::string& name, const ParamValue& value) {
     std::lock_guard<std::mutex> lock(params_mutex_);
 
     try {
@@ -70,7 +70,7 @@ bool SegmentNode::set_param(const std::string& name, const ParamValue& value) {
             }
         }
     } catch (const std::exception& e) {
-        VP_LOG_ERROR("SegmentNode '{}': failed to set param '{}': {}",
+        VP_LOG_ERROR("YoloSegNode '{}': failed to set param '{}': {}",
                      name_, name, e.what());
         return false;
     }
@@ -78,7 +78,7 @@ bool SegmentNode::set_param(const std::string& name, const ParamValue& value) {
     return false;
 }
 
-void SegmentNode::process_batch(std::vector<Frame>& frames) {
+void YoloSegNode::process_batch(std::vector<Frame>& frames) {
     for (auto& frame : frames) {
         Tensor input_tensor;
         auto letterbox_params = preprocess(frame, input_tensor);
@@ -92,14 +92,14 @@ void SegmentNode::process_batch(std::vector<Frame>& frames) {
         run_inference_multi(input_tensor, outputs);
 
         if (outputs.size() < 2) {
-            throw InferError("SegmentNode expects 2 outputs from engine");
+            throw InferError("YoloSegNode expects 2 outputs from engine");
         }
 
         postprocess(frame, outputs[0], outputs[1], letterbox_params, orig_width, orig_height);
     }
 }
 
-LetterboxParams SegmentNode::preprocess(Frame& frame, Tensor& input_tensor) {
+LetterboxParams YoloSegNode::preprocess(Frame& frame, Tensor& input_tensor) {
     if (!frame.has_image()) {
         throw InferError("Frame has no image data");
     }
@@ -204,11 +204,11 @@ LetterboxParams SegmentNode::preprocess(Frame& frame, Tensor& input_tensor) {
     return letterbox_params;
 }
 
-void SegmentNode::postprocess(Frame& frame, const Tensor& det_output,
+void YoloSegNode::postprocess(Frame& frame, const Tensor& det_output,
                               const Tensor& proto_output,
                               const LetterboxParams& letterbox_params,
                               int orig_width, int orig_height) {
-    SegmentConfig config;
+    YoloSegConfig config;
     {
         std::lock_guard<std::mutex> lock(params_mutex_);
         config = config_;

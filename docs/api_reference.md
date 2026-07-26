@@ -33,10 +33,10 @@
 |------|------|
 | 枚举 | `PipelineState`, `PipelineStatus`, `NodeState`, `OverflowPolicy`, `DecodeMode` |
 | 数据 | `Frame`, `Detection`, `Classification`, `Track`, `QueueStats`, `NodeStats`, `PipelineStats`, `PipelineConfig` |
-| 配置 | `SourceConfig`, `DetectorConfig`, `ClassifierConfig`, `SegmentConfig`, `ByteTrackConfig`, `AnnotatorConfig`, `JsonResultSinkConfig`, `MjpegSinkConfig`, `WebRTCSinkConfig` |
+| 配置 | `SourceConfig`, `DetectorConfig`, `ClassifierConfig`, `YoloSegConfig`, `ByteTrackConfig`, `AnnotatorConfig`, `JsonResultSinkConfig`, `MjpegSinkConfig`, `WebRTCSinkConfig` |
 | HAL  | `IModelEngine`, `MockModelEngine`, `TrtModelEngine` |
 | 节点基类 | `NodeBase`, `SourceNode`, `SinkNode`, `ProcessProxyNode`, `PyNode`, `CustomNode`, `FrameView` |
-| 节点实现 | `FileSource`, `RtspSource`, `DetectorNode`, `ClassifierNode`, `SegmentNode`, `ByteTrackNode`, `AnnotatorNode`, `JsonResultSink`, `MjpegSink`, `WebRTCSink` |
+| 节点实现 | `FileSource`, `RtspSource`, `DetectorNode`, `ClassifierNode`, `YoloSegNode`, `ByteTrackNode`, `AnnotatorNode`, `JsonResultSink`, `MjpegSink`, `WebRTCSink` |
 | 编排 | `Pipeline`, `PipelineBuilder`, `PipelineManager` |
 | 序列化 | `PipelineSpec`, `NodeSpec`, `EdgeSpec`, `Pipeline.export_yaml`, `Pipeline.load_yaml`, `Pipeline.from_yaml`, `Pipeline.rebuild_from_spec` |
 | 异常 | `VisionPipeError`, `ConfigError`, `NotFoundError`, `CudaError`, `ModelLoadError`, `InferError`, `StreamError` |
@@ -180,7 +180,7 @@ detector.set_param("clear_roi", True)
 
 `ClassifierNode(engine: IModelEngine, config: ClassifierConfig, name: str = "classifier")`
 
-#### `SegmentConfig`
+#### `YoloSegConfig`
 
 | 字段 | 默认 | 说明 |
 |------|------|------|
@@ -191,7 +191,9 @@ detector.set_param("clear_roi", True)
 | `max_detections` | `100` | 最大目标数 |
 | `workers` | `1` | 并行 worker 数 |
 
-`SegmentNode(engine: IModelEngine, config: SegmentConfig, name: str = "segment")`
+`YoloSegNode(engine: IModelEngine, config: YoloSegConfig, name: str = "yolo_seg")`
+
+> 旧名 `SegmentNode` / `SegmentConfig` 保留为兼容别名。当前仅支持 YOLOv8/YOLO11-seg 输出格式。
 
 输出同时填充 `frame.detections`（bbox/类别）和实例掩码（C++ 内部的 `Frame::masks`）。
 

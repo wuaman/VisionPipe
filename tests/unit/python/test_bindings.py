@@ -24,7 +24,7 @@ def test_exports_are_available() -> None:
     assert visionpipe.MockModelEngine is not None
     assert visionpipe.DetectorNode is not None
     assert visionpipe.ClassifierNode is not None
-    assert visionpipe.SegmentNode is not None
+    assert visionpipe.YoloSegNode is not None
     assert visionpipe.JsonResultSink is not None
     assert visionpipe.MjpegSink is not None
     assert visionpipe.WebRTCSink is not None
@@ -81,7 +81,7 @@ def test_infer_configs_defaults_and_mutation() -> None:
     assert classifier.max_batch_size == 8
     assert classifier.normalize_mean_std is False
 
-    segment = visionpipe.SegmentConfig()
+    segment = visionpipe.YoloSegConfig()
     assert segment.input_width == 640
     assert segment.input_height == 640
     assert segment.max_detections == 100
@@ -175,9 +175,9 @@ def test_mock_engine_and_infer_node_construction() -> None:
     assert classifier.worker_count() == 1
     assert classifier.config().max_batch_size == 32
 
-    segment_config = visionpipe.SegmentConfig()
+    segment_config = visionpipe.YoloSegConfig()
     segment_config.workers = 0
-    segment = visionpipe.SegmentNode(engine, segment_config, "seg")
+    segment = visionpipe.YoloSegNode(engine, segment_config, "seg")
     assert segment.name() == "seg"
     assert segment.worker_count() == 1
     assert segment.last_masks() == []
@@ -199,11 +199,11 @@ def test_infer_nodes_raise_for_missing_engine() -> None:
         raise AssertionError("ClassifierNode(None) should fail")
 
     try:
-        visionpipe.SegmentNode(None)
+        visionpipe.YoloSegNode(None)
     except TypeError:
         pass
     else:
-        raise AssertionError("SegmentNode(None) should fail")
+        raise AssertionError("YoloSegNode(None) should fail")
 
 
 def test_detector_roi_binding() -> None:

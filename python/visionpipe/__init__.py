@@ -55,7 +55,8 @@ SourceConfig = _ext.SourceConfig
 ByteTrackConfig = _ext.ByteTrackConfig
 DetectorConfig = _ext.DetectorConfig
 ClassifierConfig = _ext.ClassifierConfig
-SegmentConfig = _ext.SegmentConfig
+YoloSegConfig = _ext.YoloSegConfig
+SegmentConfig = _ext.YoloSegConfig  # deprecated: 兼容旧名，请使用 YoloSegConfig
 Detection = _ext.Detection
 Classification = _ext.Classification
 Track = _ext.Track
@@ -73,7 +74,8 @@ RtspSource = _ext.RtspSource
 ByteTrackNode = _ext.ByteTrackNode
 DetectorNode = _ext.DetectorNode
 ClassifierNode = _ext.ClassifierNode
-SegmentNode = _ext.SegmentNode
+YoloSegNode = _ext.YoloSegNode
+SegmentNode = _ext.YoloSegNode  # deprecated: 兼容旧名，请使用 YoloSegNode
 Pipeline = _ext.Pipeline
 PipelineBuilder = _ext.PipelineBuilder
 PipelineManager = _ext.PipelineManager
@@ -183,6 +185,7 @@ __all__ = [
     "DetectorConfig",
     "ClassifierConfig",
     "SegmentConfig",
+    "YoloSegConfig",
     "Detection",
     "Classification",
     "Track",
@@ -199,6 +202,7 @@ __all__ = [
     "DetectorNode",
     "ClassifierNode",
     "SegmentNode",
+    "YoloSegNode",
     "Pipeline",
     "PipelineBuilder",
     "PipelineManager",

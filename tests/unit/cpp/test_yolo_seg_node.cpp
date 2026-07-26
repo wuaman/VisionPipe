@@ -1,5 +1,5 @@
 // test_segment_node.cpp
-// 任务 T2.5 单元测试：SegmentNode + SegMaskDecoder
+// 任务 T2.5 单元测试：YoloSegNode + SegMaskDecoder
 
 #include <gtest/gtest.h>
 
@@ -16,7 +16,7 @@
 #include "hal/imodel_engine.h"
 #include "nodes/infer/post/seg_mask_decoder.h"
 #include "nodes/infer/pre/letterbox_resize.h"
-#include "nodes/infer/segment_node.h"
+#include "nodes/infer/yolo_seg_node.h"
 
 namespace visionpipe {
 namespace {
@@ -35,7 +35,7 @@ public:
 
     void infer(const Tensor&, Tensor&) override {
         // 分割节点使用 infer_multi，此方法不应被调用
-        throw std::runtime_error("SegmentNode should use infer_multi");
+        throw std::runtime_error("YoloSegNode should use infer_multi");
     }
 
     void infer_multi(const Tensor& input, std::vector<Tensor>& outputs) override {
@@ -189,16 +189,16 @@ TEST_F(SegMaskParamsTest, BoundaryValues) {
     EXPECT_EQ(params.max_detections, 10000);
 }
 
-// ==================== SegmentConfig 测试 ====================
+// ==================== YoloSegConfig 测试 ====================
 
-class SegmentConfigTest : public ::testing::Test {
+class YoloSegConfigTest : public ::testing::Test {
 protected:
     void SetUp() override {}
     void TearDown() override {}
 };
 
-TEST_F(SegmentConfigTest, DefaultValues) {
-    SegmentConfig config;
+TEST_F(YoloSegConfigTest, DefaultValues) {
+    YoloSegConfig config;
 
     EXPECT_EQ(config.input_width, 640);
     EXPECT_EQ(config.input_height, 640);
@@ -209,8 +209,8 @@ TEST_F(SegmentConfigTest, DefaultValues) {
     EXPECT_EQ(config.workers, 1u);
 }
 
-TEST_F(SegmentConfigTest, CustomValues) {
-    SegmentConfig config;
+TEST_F(YoloSegConfigTest, CustomValues) {
+    YoloSegConfig config;
     config.input_width = 1280;
     config.input_height = 720;
     config.score_threshold = 0.5f;
@@ -228,8 +228,8 @@ TEST_F(SegmentConfigTest, CustomValues) {
     EXPECT_EQ(config.workers, 4u);
 }
 
-TEST_F(SegmentConfigTest, InvalidInputSize) {
-    SegmentConfig config;
+TEST_F(YoloSegConfigTest, InvalidInputSize) {
+    YoloSegConfig config;
 
     // 输入尺寸应大于 0
     config.input_width = 0;
@@ -246,9 +246,9 @@ TEST_F(SegmentConfigTest, InvalidInputSize) {
     EXPECT_EQ(config.input_height, 1);
 }
 
-// ==================== SegmentNode 构造测试 ====================
+// ==================== YoloSegNode 构造测试 ====================
 
-class SegmentNodeConstructorTest : public ::testing::Test {
+class YoloSegNodeConstructorTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
@@ -259,8 +259,8 @@ protected:
     std::shared_ptr<MockSegModelEngine> engine_;
 };
 
-TEST_F(SegmentNodeConstructorTest, DefaultConstruction) {
-    SegmentNode node(engine_);
+TEST_F(YoloSegNodeConstructorTest, DefaultConstruction) {
+    YoloSegNode node(engine_);
 
     EXPECT_EQ(node.config().input_width, 640);
     EXPECT_EQ(node.config().input_height, 640);
@@ -268,13 +268,13 @@ TEST_F(SegmentNodeConstructorTest, DefaultConstruction) {
     EXPECT_EQ(node.state(), NodeState::INIT);
 }
 
-TEST_F(SegmentNodeConstructorTest, ConstructionWithConfig) {
-    SegmentConfig config;
+TEST_F(YoloSegNodeConstructorTest, ConstructionWithConfig) {
+    YoloSegConfig config;
     config.input_width = 1280;
     config.input_height = 720;
     config.workers = 3;
 
-    SegmentNode node(engine_, config, "custom_segment");
+    YoloSegNode node(engine_, config, "custom_segment");
 
     EXPECT_EQ(node.config().input_width, 1280);
     EXPECT_EQ(node.config().input_height, 720);
@@ -282,33 +282,33 @@ TEST_F(SegmentNodeConstructorTest, ConstructionWithConfig) {
     EXPECT_EQ(node.name(), "custom_segment");
 }
 
-TEST_F(SegmentNodeConstructorTest, ConstructionWithNameOnly) {
-    SegmentNode node(engine_, "named_segment");
+TEST_F(YoloSegNodeConstructorTest, ConstructionWithNameOnly) {
+    YoloSegNode node(engine_, "named_segment");
 
     EXPECT_EQ(node.name(), "named_segment");
     EXPECT_EQ(node.config().input_width, 640);
     EXPECT_EQ(node.config().input_height, 640);
 }
 
-TEST_F(SegmentNodeConstructorTest, NullEngineThrows) {
+TEST_F(YoloSegNodeConstructorTest, NullEngineThrows) {
     std::shared_ptr<IModelEngine> null_engine;
-    EXPECT_THROW({ SegmentNode node(null_engine); }, ConfigError);
+    EXPECT_THROW({ YoloSegNode node(null_engine); }, ConfigError);
 }
 
-TEST_F(SegmentNodeConstructorTest, CannotMoveDueToMutex) {
-    // SegmentNode contains mutex/atomic members, move is deleted
+TEST_F(YoloSegNodeConstructorTest, CannotMoveDueToMutex) {
+    // YoloSegNode contains mutex/atomic members, move is deleted
     // Typically managed via shared_ptr
-    auto node_ptr = std::make_shared<SegmentNode>(engine_, "original");
+    auto node_ptr = std::make_shared<YoloSegNode>(engine_, "original");
     EXPECT_EQ(node_ptr->name(), "original");
 }
 
-// ==================== SegmentNode 状态转换测试 ====================
+// ==================== YoloSegNode 状态转换测试 ====================
 
-class SegmentNodeStateTest : public ::testing::Test {
+class YoloSegNodeStateTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
-        node_ = std::make_unique<SegmentNode>(engine_);
+        node_ = std::make_unique<YoloSegNode>(engine_);
     }
 
     void TearDown() override {
@@ -319,19 +319,19 @@ protected:
     }
 
     std::shared_ptr<MockSegModelEngine> engine_;
-    std::unique_ptr<SegmentNode> node_;
+    std::unique_ptr<YoloSegNode> node_;
 };
 
-TEST_F(SegmentNodeStateTest, InitialStateIsInit) {
+TEST_F(YoloSegNodeStateTest, InitialStateIsInit) {
     EXPECT_EQ(node_->state(), NodeState::INIT);
 }
 
-TEST_F(SegmentNodeStateTest, StartTransitionsToRunning) {
+TEST_F(YoloSegNodeStateTest, StartTransitionsToRunning) {
     node_->start();
     EXPECT_EQ(node_->state(), NodeState::RUNNING);
 }
 
-TEST_F(SegmentNodeStateTest, StopTransitionsToDrainingThenStopped) {
+TEST_F(YoloSegNodeStateTest, StopTransitionsToDrainingThenStopped) {
     node_->start();
     EXPECT_EQ(node_->state(), NodeState::RUNNING);
 
@@ -342,7 +342,7 @@ TEST_F(SegmentNodeStateTest, StopTransitionsToDrainingThenStopped) {
     EXPECT_EQ(node_->state(), NodeState::STOPPED);
 }
 
-TEST_F(SegmentNodeStateTest, StopWithoutDrain) {
+TEST_F(YoloSegNodeStateTest, StopWithoutDrain) {
     node_->start();
     node_->stop(false);
     node_->wait_stop();
@@ -350,7 +350,7 @@ TEST_F(SegmentNodeStateTest, StopWithoutDrain) {
     EXPECT_EQ(node_->state(), NodeState::STOPPED);
 }
 
-TEST_F(SegmentNodeStateTest, MultipleStopsAreIdempotent) {
+TEST_F(YoloSegNodeStateTest, MultipleStopsAreIdempotent) {
     node_->start();
     node_->stop(true);
     node_->stop(true);  // 重复调用
@@ -360,7 +360,7 @@ TEST_F(SegmentNodeStateTest, MultipleStopsAreIdempotent) {
     EXPECT_EQ(node_->state(), NodeState::STOPPED);
 }
 
-TEST_F(SegmentNodeStateTest, StopWithoutStart) {
+TEST_F(YoloSegNodeStateTest, StopWithoutStart) {
     // 允许在未启动状态下调用 stop
     EXPECT_NO_THROW({
         node_->stop(false);
@@ -369,7 +369,7 @@ TEST_F(SegmentNodeStateTest, StopWithoutStart) {
     EXPECT_EQ(node_->state(), NodeState::STOPPED);
 }
 
-TEST_F(SegmentNodeStateTest, RestartAfterStop) {
+TEST_F(YoloSegNodeStateTest, RestartAfterStop) {
     node_->start();
     node_->stop(true);
     node_->wait_stop();
@@ -383,13 +383,13 @@ TEST_F(SegmentNodeStateTest, RestartAfterStop) {
     node_->wait_stop();
 }
 
-// ==================== SegmentNode 参数设置测试 ====================
+// ==================== YoloSegNode 参数设置测试 ====================
 
-class SegmentNodeParamTest : public ::testing::Test {
+class YoloSegNodeParamTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
-        node_ = std::make_unique<SegmentNode>(engine_);
+        node_ = std::make_unique<YoloSegNode>(engine_);
     }
 
     void TearDown() override {
@@ -398,46 +398,46 @@ protected:
     }
 
     std::shared_ptr<MockSegModelEngine> engine_;
-    std::unique_ptr<SegmentNode> node_;
+    std::unique_ptr<YoloSegNode> node_;
 };
 
-TEST_F(SegmentNodeParamTest, SetScoreThreshold) {
+TEST_F(YoloSegNodeParamTest, SetScoreThreshold) {
     bool result = node_->set_param("score_threshold", 0.5f);
     EXPECT_TRUE(result);
     EXPECT_FLOAT_EQ(node_->config().score_threshold, 0.5f);
 }
 
-TEST_F(SegmentNodeParamTest, SetNmsThreshold) {
+TEST_F(YoloSegNodeParamTest, SetNmsThreshold) {
     bool result = node_->set_param("nms_threshold", 0.3f);
     EXPECT_TRUE(result);
     EXPECT_FLOAT_EQ(node_->config().nms_threshold, 0.3f);
 }
 
-TEST_F(SegmentNodeParamTest, SetMaskThreshold) {
+TEST_F(YoloSegNodeParamTest, SetMaskThreshold) {
     bool result = node_->set_param("mask_threshold", 0.6f);
     EXPECT_TRUE(result);
     EXPECT_FLOAT_EQ(node_->config().mask_threshold, 0.6f);
 }
 
-TEST_F(SegmentNodeParamTest, SetMaxDetections) {
+TEST_F(YoloSegNodeParamTest, SetMaxDetections) {
     bool result = node_->set_param("max_detections", 50);
     EXPECT_TRUE(result);
     EXPECT_EQ(node_->config().max_detections, 50);
 }
 
-TEST_F(SegmentNodeParamTest, SetInvalidParamName) {
+TEST_F(YoloSegNodeParamTest, SetInvalidParamName) {
     bool result = node_->set_param("invalid_param", 123);
     EXPECT_FALSE(result);
 }
 
-TEST_F(SegmentNodeParamTest, SetParamTypeMismatch) {
+TEST_F(YoloSegNodeParamTest, SetParamTypeMismatch) {
     // 传递错误类型的参数
     bool result = node_->set_param("score_threshold", "invalid_string");
     // 实现应拒绝类型不匹配的参数
     EXPECT_FALSE(result);
 }
 
-TEST_F(SegmentNodeParamTest, SetBoundaryThresholdValues) {
+TEST_F(YoloSegNodeParamTest, SetBoundaryThresholdValues) {
     // 阈值边界值测试
     EXPECT_TRUE(node_->set_param("score_threshold", 0.0f));
     EXPECT_FLOAT_EQ(node_->config().score_threshold, 0.0f);
@@ -446,7 +446,7 @@ TEST_F(SegmentNodeParamTest, SetBoundaryThresholdValues) {
     EXPECT_FLOAT_EQ(node_->config().score_threshold, 1.0f);
 }
 
-TEST_F(SegmentNodeParamTest, SetParamWhileRunning) {
+TEST_F(YoloSegNodeParamTest, SetParamWhileRunning) {
     node_->start();
 
     // 热更新应在运行时也能工作
@@ -455,15 +455,15 @@ TEST_F(SegmentNodeParamTest, SetParamWhileRunning) {
     EXPECT_FLOAT_EQ(node_->config().score_threshold, 0.7f);
 }
 
-// ==================== SegmentNode 处理测试 ====================
+// ==================== YoloSegNode 处理测试 ====================
 
-class SegmentNodeProcessTest : public ::testing::Test {
+class YoloSegNodeProcessTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
-        SegmentConfig config;
+        YoloSegConfig config;
         config.workers = 1;
-        node_ = std::make_unique<SegmentNode>(engine_, config);
+        node_ = std::make_unique<YoloSegNode>(engine_, config);
 
         input_queue_ = std::make_unique<BoundedQueue<Frame>>(16, OverflowPolicy::BLOCK);
         node_->set_input_queue(input_queue_.get());
@@ -477,11 +477,11 @@ protected:
     }
 
     std::shared_ptr<MockSegModelEngine> engine_;
-    std::unique_ptr<SegmentNode> node_;
+    std::unique_ptr<YoloSegNode> node_;
     std::unique_ptr<BoundedQueue<Frame>> input_queue_;
 };
 
-TEST_F(SegmentNodeProcessTest, ProcessSingleFrame) {
+TEST_F(YoloSegNodeProcessTest, ProcessSingleFrame) {
     node_->start();
 
     Frame frame = make_seg_frame(0);
@@ -501,7 +501,7 @@ TEST_F(SegmentNodeProcessTest, ProcessSingleFrame) {
     EXPECT_TRUE(result->has_image());
 }
 
-TEST_F(SegmentNodeProcessTest, ProcessMultipleFramesInOrder) {
+TEST_F(YoloSegNodeProcessTest, ProcessMultipleFramesInOrder) {
     node_->start();
 
     constexpr int kFrameCount = 5;
@@ -528,7 +528,7 @@ TEST_F(SegmentNodeProcessTest, ProcessMultipleFramesInOrder) {
     }
 }
 
-TEST_F(SegmentNodeProcessTest, ProcessEmptyFrame) {
+TEST_F(YoloSegNodeProcessTest, ProcessEmptyFrame) {
     node_->start();
 
     // 创建空帧（无图像）
@@ -551,7 +551,7 @@ TEST_F(SegmentNodeProcessTest, ProcessEmptyFrame) {
     EXPECT_GE(stats.error_count, 0u);
 }
 
-TEST_F(SegmentNodeProcessTest, OutputHasDetections) {
+TEST_F(YoloSegNodeProcessTest, OutputHasDetections) {
     node_->start();
 
     Frame frame = make_seg_frame(0);
@@ -572,7 +572,7 @@ TEST_F(SegmentNodeProcessTest, OutputHasDetections) {
     EXPECT_GE(result->detections.size(), 0u);
 }
 
-TEST_F(SegmentNodeProcessTest, LastMasksAccessible) {
+TEST_F(YoloSegNodeProcessTest, LastMasksAccessible) {
     node_->start();
 
     Frame frame = make_seg_frame(0);
@@ -589,9 +589,9 @@ TEST_F(SegmentNodeProcessTest, LastMasksAccessible) {
     EXPECT_GE(masks.size(), 0u);
 }
 
-// ==================== SegmentNode 多 Worker 测试 ====================
+// ==================== YoloSegNode 多 Worker 测试 ====================
 
-class SegmentNodeMultiWorkerTest : public ::testing::Test {
+class YoloSegNodeMultiWorkerTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
@@ -602,11 +602,11 @@ protected:
     std::shared_ptr<MockSegModelEngine> engine_;
 };
 
-TEST_F(SegmentNodeMultiWorkerTest, SingleWorkerCreatesOneContext) {
-    SegmentConfig config;
+TEST_F(YoloSegNodeMultiWorkerTest, SingleWorkerCreatesOneContext) {
+    YoloSegConfig config;
     config.workers = 1;
 
-    SegmentNode node(engine_, config);
+    YoloSegNode node(engine_, config);
     EXPECT_EQ(node.worker_count(), 1u);
 
     node.start();
@@ -616,11 +616,11 @@ TEST_F(SegmentNodeMultiWorkerTest, SingleWorkerCreatesOneContext) {
     EXPECT_EQ(engine_->created_contexts(), 1u);
 }
 
-TEST_F(SegmentNodeMultiWorkerTest, MultipleWorkersCreateMultipleContexts) {
-    SegmentConfig config;
+TEST_F(YoloSegNodeMultiWorkerTest, MultipleWorkersCreateMultipleContexts) {
+    YoloSegConfig config;
     config.workers = 3;
 
-    SegmentNode node(engine_, config);
+    YoloSegNode node(engine_, config);
     EXPECT_EQ(node.worker_count(), 3u);
 
     node.start();
@@ -630,11 +630,11 @@ TEST_F(SegmentNodeMultiWorkerTest, MultipleWorkersCreateMultipleContexts) {
     EXPECT_EQ(engine_->created_contexts(), 3u);
 }
 
-TEST_F(SegmentNodeMultiWorkerTest, MultipleWorkersPreserveFrameOrder) {
-    SegmentConfig config;
+TEST_F(YoloSegNodeMultiWorkerTest, MultipleWorkersPreserveFrameOrder) {
+    YoloSegConfig config;
     config.workers = 3;
 
-    auto node = std::make_unique<SegmentNode>(engine_, config);
+    auto node = std::make_unique<YoloSegNode>(engine_, config);
     auto input_queue = std::make_unique<BoundedQueue<Frame>>(32, OverflowPolicy::BLOCK);
 
     node->set_input_queue(input_queue.get());
@@ -742,13 +742,13 @@ TEST_F(SegMaskDecoderTest, ComputeMaskBboxIouZeroSizeBbox) {
     EXPECT_FLOAT_EQ(iou, 0.0f);
 }
 
-// ==================== SegmentNode 统计测试 ====================
+// ==================== YoloSegNode 统计测试 ====================
 
-class SegmentNodeStatsTest : public ::testing::Test {
+class YoloSegNodeStatsTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
-        node_ = std::make_unique<SegmentNode>(engine_);
+        node_ = std::make_unique<YoloSegNode>(engine_);
     }
 
     void TearDown() override {
@@ -757,10 +757,10 @@ protected:
     }
 
     std::shared_ptr<MockSegModelEngine> engine_;
-    std::unique_ptr<SegmentNode> node_;
+    std::unique_ptr<YoloSegNode> node_;
 };
 
-TEST_F(SegmentNodeStatsTest, InitialStats) {
+TEST_F(YoloSegNodeStatsTest, InitialStats) {
     auto stats = node_->stats();
 
     EXPECT_EQ(stats.processed_count, 0u);
@@ -768,7 +768,7 @@ TEST_F(SegmentNodeStatsTest, InitialStats) {
     EXPECT_DOUBLE_EQ(stats.fps, 0.0);
 }
 
-TEST_F(SegmentNodeStatsTest, StatsAfterProcessing) {
+TEST_F(YoloSegNodeStatsTest, StatsAfterProcessing) {
     auto input_queue = std::make_unique<BoundedQueue<Frame>>(16, OverflowPolicy::BLOCK);
     node_->set_input_queue(input_queue.get());
     node_->create_output_queue(16, OverflowPolicy::BLOCK);
@@ -788,13 +788,13 @@ TEST_F(SegmentNodeStatsTest, StatsAfterProcessing) {
     EXPECT_EQ(stats.processed_count, static_cast<uint64_t>(kFrameCount));
 }
 
-// ==================== SegmentNode 队列测试 ====================
+// ==================== YoloSegNode 队列测试 ====================
 
-class SegmentNodeQueueTest : public ::testing::Test {
+class YoloSegNodeQueueTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
-        node_ = std::make_unique<SegmentNode>(engine_);
+        node_ = std::make_unique<YoloSegNode>(engine_);
     }
 
     void TearDown() override {
@@ -803,10 +803,10 @@ protected:
     }
 
     std::shared_ptr<MockSegModelEngine> engine_;
-    std::unique_ptr<SegmentNode> node_;
+    std::unique_ptr<YoloSegNode> node_;
 };
 
-TEST_F(SegmentNodeQueueTest, CreateOutputQueue) {
+TEST_F(YoloSegNodeQueueTest, CreateOutputQueue) {
     node_->create_output_queue(32, OverflowPolicy::DROP_OLDEST);
 
     auto output_queue = node_->output_queue();
@@ -815,7 +815,7 @@ TEST_F(SegmentNodeQueueTest, CreateOutputQueue) {
     EXPECT_EQ(output_queue->policy(), OverflowPolicy::DROP_OLDEST);
 }
 
-TEST_F(SegmentNodeQueueTest, SetInputQueue) {
+TEST_F(YoloSegNodeQueueTest, SetInputQueue) {
     auto input_queue = std::make_shared<BoundedQueue<Frame>>(16);
     node_->set_input_queue(input_queue.get());
 
@@ -824,17 +824,17 @@ TEST_F(SegmentNodeQueueTest, SetInputQueue) {
     node_->set_input_queue(nullptr);
 }
 
-TEST_F(SegmentNodeQueueTest, IsSourceReturnsFalse) {
+TEST_F(YoloSegNodeQueueTest, IsSourceReturnsFalse) {
     EXPECT_FALSE(node_->is_source());
 }
 
-TEST_F(SegmentNodeQueueTest, IsSinkReturnsFalse) {
+TEST_F(YoloSegNodeQueueTest, IsSinkReturnsFalse) {
     EXPECT_FALSE(node_->is_sink());
 }
 
-// ==================== SegmentNode 并发安全测试 ====================
+// ==================== YoloSegNode 并发安全测试 ====================
 
-class SegmentNodeConcurrencyTest : public ::testing::Test {
+class YoloSegNodeConcurrencyTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
@@ -845,11 +845,11 @@ protected:
     std::shared_ptr<MockSegModelEngine> engine_;
 };
 
-TEST_F(SegmentNodeConcurrencyTest, ConcurrentParamUpdate) {
-    SegmentConfig config;
+TEST_F(YoloSegNodeConcurrencyTest, ConcurrentParamUpdate) {
+    YoloSegConfig config;
     config.workers = 2;
 
-    auto node = std::make_unique<SegmentNode>(engine_, config);
+    auto node = std::make_unique<YoloSegNode>(engine_, config);
     auto input_queue = std::make_unique<BoundedQueue<Frame>>(32, OverflowPolicy::BLOCK);
 
     node->set_input_queue(input_queue.get());
@@ -887,8 +887,8 @@ TEST_F(SegmentNodeConcurrencyTest, ConcurrentParamUpdate) {
     EXPECT_GT(success_count.load(), 0);
 }
 
-TEST_F(SegmentNodeConcurrencyTest, ConcurrentStartStop) {
-    auto node = std::make_unique<SegmentNode>(engine_);
+TEST_F(YoloSegNodeConcurrencyTest, ConcurrentStartStop) {
+    auto node = std::make_unique<YoloSegNode>(engine_);
 
     std::vector<std::thread> threads;
 
@@ -910,9 +910,9 @@ TEST_F(SegmentNodeConcurrencyTest, ConcurrentStartStop) {
     EXPECT_EQ(node->state(), NodeState::STOPPED);
 }
 
-// ==================== SegmentNode 边界情况测试 ====================
+// ==================== YoloSegNode 边界情况测试 ====================
 
-class SegmentNodeEdgeCaseTest : public ::testing::Test {
+class YoloSegNodeEdgeCaseTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_shared<MockSegModelEngine>();
@@ -923,8 +923,8 @@ protected:
     std::shared_ptr<MockSegModelEngine> engine_;
 };
 
-TEST_F(SegmentNodeEdgeCaseTest, VeryLargeFrameId) {
-    auto node = std::make_unique<SegmentNode>(engine_);
+TEST_F(YoloSegNodeEdgeCaseTest, VeryLargeFrameId) {
+    auto node = std::make_unique<YoloSegNode>(engine_);
     auto input_queue = std::make_unique<BoundedQueue<Frame>>(16, OverflowPolicy::BLOCK);
 
     node->set_input_queue(input_queue.get());
@@ -946,8 +946,8 @@ TEST_F(SegmentNodeEdgeCaseTest, VeryLargeFrameId) {
     EXPECT_EQ(result->frame_id, INT64_MAX);
 }
 
-TEST_F(SegmentNodeEdgeCaseTest, NegativeFrameId) {
-    auto node = std::make_unique<SegmentNode>(engine_);
+TEST_F(YoloSegNodeEdgeCaseTest, NegativeFrameId) {
+    auto node = std::make_unique<YoloSegNode>(engine_);
     auto input_queue = std::make_unique<BoundedQueue<Frame>>(16, OverflowPolicy::BLOCK);
 
     node->set_input_queue(input_queue.get());
@@ -968,8 +968,8 @@ TEST_F(SegmentNodeEdgeCaseTest, NegativeFrameId) {
     EXPECT_EQ(result->frame_id, -1);
 }
 
-TEST_F(SegmentNodeEdgeCaseTest, SinglePixelImage) {
-    auto node = std::make_unique<SegmentNode>(engine_);
+TEST_F(YoloSegNodeEdgeCaseTest, SinglePixelImage) {
+    auto node = std::make_unique<YoloSegNode>(engine_);
     auto input_queue = std::make_unique<BoundedQueue<Frame>>(16, OverflowPolicy::BLOCK);
 
     node->set_input_queue(input_queue.get());
@@ -989,22 +989,22 @@ TEST_F(SegmentNodeEdgeCaseTest, SinglePixelImage) {
     EXPECT_GE(stats.processed_count, 0u);
 }
 
-TEST_F(SegmentNodeEdgeCaseTest, ZeroWorkers) {
-    SegmentConfig config;
+TEST_F(YoloSegNodeEdgeCaseTest, ZeroWorkers) {
+    YoloSegConfig config;
     config.workers = 0;
 
     // workers = 0 可能是无效配置
-    auto node = std::make_unique<SegmentNode>(engine_, config);
+    auto node = std::make_unique<YoloSegNode>(engine_, config);
 
     // 应该有至少一个 worker 或者抛出错误
     EXPECT_GE(node->worker_count(), 1u);
 }
 
-TEST_F(SegmentNodeEdgeCaseTest, MaxDetectionsZero) {
-    SegmentConfig config;
+TEST_F(YoloSegNodeEdgeCaseTest, MaxDetectionsZero) {
+    YoloSegConfig config;
     config.max_detections = 0;
 
-    auto node = std::make_unique<SegmentNode>(engine_, config);
+    auto node = std::make_unique<YoloSegNode>(engine_, config);
     auto input_queue = std::make_unique<BoundedQueue<Frame>>(16, OverflowPolicy::BLOCK);
 
     node->set_input_queue(input_queue.get());

@@ -19,7 +19,7 @@
 #include "nodes/tracker/bytetrack_node.h"
 #include "nodes/infer/detector_node.h"
 #include "nodes/infer/classifier_node.h"
-#include "nodes/infer/segment_node.h"
+#include "nodes/infer/yolo_seg_node.h"
 
 namespace nb = nanobind;
 using namespace visionpipe;
@@ -178,15 +178,15 @@ void bind_frame(nb::module_& m) {
         .def_rw("normalize_mean_std", &ClassifierConfig::normalize_mean_std)
         .def_rw("target_classes", &ClassifierConfig::target_classes);
 
-    nb::class_<SegmentConfig>(m, "SegmentConfig")
+    nb::class_<YoloSegConfig>(m, "YoloSegConfig")
         .def(nb::init<>())
-        .def_rw("input_width", &SegmentConfig::input_width)
-        .def_rw("input_height", &SegmentConfig::input_height)
-        .def_rw("score_threshold", &SegmentConfig::score_threshold)
-        .def_rw("nms_threshold", &SegmentConfig::nms_threshold)
-        .def_rw("mask_threshold", &SegmentConfig::mask_threshold)
-        .def_rw("max_detections", &SegmentConfig::max_detections)
-        .def_rw("workers", &SegmentConfig::workers);
+        .def_rw("input_width", &YoloSegConfig::input_width)
+        .def_rw("input_height", &YoloSegConfig::input_height)
+        .def_rw("score_threshold", &YoloSegConfig::score_threshold)
+        .def_rw("nms_threshold", &YoloSegConfig::nms_threshold)
+        .def_rw("mask_threshold", &YoloSegConfig::mask_threshold)
+        .def_rw("max_detections", &YoloSegConfig::max_detections)
+        .def_rw("workers", &YoloSegConfig::workers);
 
     nb::class_<Detection>(m, "Detection")
         .def(nb::init<>())

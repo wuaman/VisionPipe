@@ -120,7 +120,7 @@ def _node_type_str(node: Any) -> str:
         "RtspSource": "rtsp_source",
         "DetectorNode": "detector",
         "ClassifierNode": "classifier",
-        "SegmentNode": "segment",
+        "YoloSegNode": "segment",
         "ByteTrackNode": "bytetrack",
         "AnnotatorNode": "annotator",
         "PyNode": "py_node",
@@ -179,7 +179,7 @@ def _node_params(node: Any) -> dict[str, Any]:
             "max_batch_size": cfg.max_batch_size,
             "workers": cfg.workers,
         }
-    if type_name == "SegmentNode":
+    if type_name == "YoloSegNode":
         cfg = node.config()
         return {
             "input_width": cfg.input_width,
