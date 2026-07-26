@@ -66,3 +66,8 @@ class NodeStatsSchema(BaseModel):
     errors: int
     state: str
     input_queue: QueueStatsSchema
+
+
+class TopologyResponse(BaseModel):
+    nodes: list[str]
+    edges: list[list[str]]

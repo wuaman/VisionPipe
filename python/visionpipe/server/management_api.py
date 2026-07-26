@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -36,6 +37,7 @@ from visionpipe.server.schemas import (
     QueueStatsSchema,
     SetParamRequest,
     SetParamResponse,
+    TopologyResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,8 @@ class ManagementServer:
     # ------------------------------------------------------------------
 
     def _setup_routes(self) -> None:
+        self._app.router.add_get("/", self._get_dashboard)
+        self._app.router.add_get("/dashboard", self._get_dashboard)
         self._app.router.add_post("/pipelines", self._post_pipelines)
         self._app.router.add_get("/pipelines", self._get_pipelines)
         self._app.router.add_post("/pipelines/{id}/start", self._post_start)
@@ -94,6 +98,7 @@ class ManagementServer:
         self._app.router.add_delete("/pipelines/{id}", self._delete_pipeline)
         self._app.router.add_get("/pipelines/{id}/health", self._get_health)
         self._app.router.add_get("/pipelines/{id}/nodes", self._get_nodes)
+        self._app.router.add_get("/pipelines/{id}/topology", self._get_topology)
         self._app.router.add_post("/pipelines/{id}/params", self._post_params)
         self._app.router.add_get("/mjpeg/{id}", self._get_mjpeg)
         self._app.router.add_get("/ws/{id}/results", self._ws_results)
@@ -403,7 +408,12 @@ class ManagementServer:
         if node is None:
             return _err(f"Node '{req.node_id}' not found in pipeline '{pid}'", 404)
 
-        ok = node.set_param(req.param_name, req.value)
+        try:
+            ok = node.set_param(req.param_name, req.value)
+        except Exception as exc:
+            logger.exception("Failed to set param")
+            return _err(str(exc), 500)
+
         resp = SetParamResponse(
             ok=ok,
             message="ok" if ok else f"param '{req.param_name}' not accepted by node '{req.node_id}'",
@@ -531,3 +541,30 @@ class ManagementServer:
 
         pipeline_id: str = self._manager.create_pipeline(pipeline)
         return pipeline_id
+
+    async def _get_dashboard(self, request: web.Request) -> web.Response:
+        html_path = Path(__file__).parent / "static" / "dashboard.html"
+        if not html_path.exists():
+            return _err("dashboard.html not found", 404)
+        return web.Response(
+            text=html_path.read_text(encoding="utf-8"),
+            content_type="text/html",
+        )
+
+    async def _get_topology(self, request: web.Request) -> web.Response:
+        from visionpipe.serialization import _extract_edges
+
+        pid = request.match_info["id"]
+        try:
+            pipeline = self._manager.get(pid)
+        except Exception as exc:
+            return _err(str(exc), 404)
+
+        node_names = list(pipeline.nodes().keys())
+        edges = _extract_edges(pipeline)
+        return _json(
+            TopologyResponse(
+                nodes=node_names,
+                edges=[list(e) for e in edges],
+            ).model_dump()
+        )

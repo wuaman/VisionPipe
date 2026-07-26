@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VisionPipe Console</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c232d;
+  --line: #30363d;
+  --line-soft: #21262d;
+  --text: #e6edf3;
+  --text2: #8b949e;
+  --text3: #6e7681;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --cyan: #76e3ea;
+  --radius: 6px;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { height: 100%; }
+body {
+  height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  overflow: hidden;
+}
+button { -webkit-tap-highlight-color: transparent; font-family: inherit; }
+.btn {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  transition: background .12s, border-color .12s;
+}
+.btn:hover { background: #262d38; border-color: #3d444d; }
+.btn:disabled { cursor: not-allowed; opacity: .5; }
+.btn-accent { border-color: rgba(88, 166, 255, .4); color: var(--accent); }
+.btn-accent:hover { background: rgba(88, 166, 255, .1); }
+.btn-start { border-color: rgba(63, 185, 80, .4); color: var(--green); }
+.btn-start:hover { background: rgba(63, 185, 80, .1); }
+.btn-stop { border-color: rgba(248, 81, 73, .4); color: var(--red); }
+.btn-stop:hover { background: rgba(248, 81, 73, .1); }
+
+/* ---------- Sidebar ---------- */
+#sidebar {
+  width: 248px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+#brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+.brand-name { font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+.brand-sub { font-size: 11px; color: var(--text3); margin-top: 1px; }
+.side-label {
+  padding: 12px 14px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--text3);
+  display: flex;
+  justify-content: space-between;
+}
+.side-label .n { font-family: var(--mono); color: var(--text2); }
+#pipe-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+#pipe-list:empty::before {
+  content: "暂无 Pipeline\A启动示例后会自动显示";
+  white-space: pre;
+  display: block;
+  margin: 8px 6px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--text3);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+.pipe-item {
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pipe-item:hover { background: var(--surface2); }
+.pipe-item.active { background: var(--surface2); border-color: var(--line); }
+.pipe-item.active .pipe-name { color: var(--accent); }
+.pipe-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.pipe-dot.RUNNING { background: var(--green); box-shadow: 0 0 5px rgba(63, 185, 80, .7); }
+.pipe-dot.STOPPED { background: var(--text3); }
+.pipe-dot.INIT { background: var(--yellow); box-shadow: 0 0 5px rgba(210, 153, 34, .6); }
+.pipe-info { flex: 1; min-width: 0; }
+.pipe-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pipe-state {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+}
+.pipe-state.RUNNING { color: var(--green); }
+.pipe-state.STOPPED { color: var(--text3); }
+.pipe-state.INIT { color: var(--yellow); }
+.pipe-btns .btn { padding: 3px 8px; font-size: 11px; }
+#sidebar-actions { padding: 10px; border-top: 1px solid var(--line); }
+#sidebar-actions .btn { width: 100%; }
+
+/* ---------- Main ---------- */
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+#tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  padding: 11px 14px 9px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  border-bottom: 2px solid transparent;
+  user-select: none;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+#tab-pipe-id {
+  margin-left: auto;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text3);
+}
+#content { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; }
+.panel { display: none; flex: 1; min-height: 0; }
+.panel.active { display: flex; flex-direction: column; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--text2);
+}
+.card-body { flex: 1; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
+
+/* ---------- DAG ---------- */
+#dag-svg {
+  flex: 1;
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, var(--line-soft) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.node-card rect.box {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1;
+  rx: 6; ry: 6;
+}
+.node-card:hover rect.box { stroke: var(--accent); }
+.node-card .name { fill: var(--text); font-size: 13px; font-weight: 700; }
+.node-card .fps { fill: var(--green); font-size: 12px; font-family: var(--mono); }
+.node-card .latency { fill: var(--text2); font-size: 11px; font-family: var(--mono); }
+.node-card .qtxt { fill: var(--text3); font-size: 10px; font-family: var(--mono); }
+.edge-path { fill: none; stroke: #3d444d; stroke-width: 1.5; }
+.edge-arrow { fill: #58657a; }
+.dag-empty { fill: var(--text3); font-size: 14px; }
+
+/* ---------- Stream ---------- */
+#stream-container { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: 14px; flex: 1; min-height: 0; }
+#stream-left, #stream-right { display: flex; flex-direction: column; min-width: 0; }
+#stream-left .card, #stream-right .card { flex: 1; }
+.badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text2);
+}
+.badge.webrtc { color: var(--green); border-color: rgba(63, 185, 80, .4); }
+.badge.mjpeg { color: var(--accent); border-color: rgba(88, 166, 255, .4); }
+.badge.error { color: var(--red); border-color: rgba(248, 81, 73, .4); }
+.badge.connecting { color: var(--yellow); border-color: rgba(210, 153, 34, .4); }
+#stream-status { color: var(--text3); font-size: 11px; font-weight: 400; letter-spacing: 0; text-align: right; }
+#webrtc-video, #mjpeg-img {
+  width: 100%;
+  flex: 1;
+  background: #010409;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  min-height: 400px;
+  object-fit: contain;
+}
+#webrtc-video, #mjpeg-img { display: none; }
+#mjpeg-placeholder {
+  width: 100%;
+  flex: 1;
+  min-height: 400px;
+  background: #010409;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text3);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px;
+}
+#json-results {
+  flex: 1;
+  background: #010409;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  overflow-y: auto;
+  color: var(--text2);
+}
+#json-results:empty::before { content: "等待推理结果..."; color: var(--text3); }
+#json-results .ts { color: var(--text3); }
+#json-results .fid { color: var(--cyan); }
+#json-results .dets { color: var(--green); }
+
+/* ---------- Control ---------- */
+#panel-control .card { max-width: 760px; }
+.ctrl-row {
+  display: grid;
+  grid-template-columns: 130px minmax(160px, 1fr) 76px;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.ctrl-row:last-of-type { border-bottom: 0; }
+.ctrl-row label { font-size: 12px; color: var(--text2); }
+.ctrl-row input[type=range] { width: 100%; accent-color: var(--accent); }
+.ctrl-row select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  color: var(--text);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.ctrl-row .val { font-family: var(--mono); font-size: 12px; color: var(--cyan); text-align: right; }
+.ctrl-actions { display: flex; align-items: center; gap: 12px; padding-top: 12px; }
+#param-status { color: var(--text2); font-size: 12px; font-family: var(--mono); }
+#param-status.ok { color: var(--green); }
+#param-status.error { color: var(--red); }
+
+/* ---------- Status bar ---------- */
+#statusbar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 28px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text2);
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+.sb-item { padding: 0 10px; border-right: 1px solid var(--line-soft); display: flex; gap: 6px; align-items: center; }
+.sb-item:last-child { border-right: 0; margin-left: auto; }
+.sb-item b { color: var(--text); font-weight: 600; }
+.sb-item .lbl { color: var(--text3); }
+
+@media (max-width: 1080px) {
+  body { flex-direction: column; overflow: auto; height: auto; }
+  #sidebar { width: 100%; max-height: 280px; border-right: 0; border-bottom: 1px solid var(--line); }
+  #main { min-height: 700px; }
+  #stream-container { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<aside id="sidebar">
+  <div id="brand">
+    <div class="brand-mark">VP</div>
+    <div>
+      <div class="brand-name">VISIONPIPE</div>
+      <div class="brand-sub">Pipeline 监控台</div>
+    </div>
+  </div>
+  <div class="side-label">PIPELINES <span class="n" id="pipe-count">0</span></div>
+  <div id="pipe-list"></div>
+  <div id="sidebar-actions"><button class="btn btn-accent" onclick="refreshPipelines()">↻ 刷新列表</button></div>
+</aside>
+<div id="main">
+  <div id="tabs">
+    <div class="tab active" data-tab="monitor">拓扑监控</div>
+    <div class="tab" data-tab="stream">实时预览</div>
+    <div class="tab" data-tab="control">参数控制</div>
+    <span id="tab-pipe-id"></span>
+  </div>
+  <div id="content">
+    <div class="panel active" id="panel-monitor">
+      <svg id="dag-svg"></svg>
+    </div>
+    <div class="panel" id="panel-stream">
+      <div id="stream-container">
+        <div id="stream-left">
+          <div class="card">
+            <div class="card-head">
+              <span>视频流 <span class="badge" id="stream-mode">未连接</span></span>
+              <span id="stream-status">请选择一个 Pipeline 查看视频流</span>
+            </div>
+            <div class="card-body">
+              <div id="mjpeg-placeholder">请选择一个 Pipeline 查看视频流</div>
+              <video id="webrtc-video" autoplay playsinline muted></video>
+              <img id="mjpeg-img" alt="MJPEG 视频流">
+            </div>
+          </div>
+        </div>
+        <div id="stream-right">
+          <div class="card">
+            <div class="card-head"><span>推理结果</span></div>
+            <div class="card-body"><div id="json-results"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" id="panel-control">
+      <div class="card">
+        <div class="card-head"><span>检测参数</span></div>
+        <div class="card-body">
+          <div class="ctrl-row"><label>目标节点</label>
+            <select id="ctrl-node"></select>
+            <span class="val" id="val-node">--</span></div>
+          <div class="ctrl-row"><label>置信度阈值</label>
+            <input type="range" min="0" max="100" value="25" id="ctrl-score">
+            <span class="val" id="val-score">0.25</span></div>
+          <div class="ctrl-row"><label>NMS 阈值</label>
+            <input type="range" min="0" max="100" value="45" id="ctrl-nms">
+            <span class="val" id="val-nms">0.45</span></div>
+          <div class="ctrl-row"><label>最大检测数</label>
+            <input type="range" min="1" max="300" value="100" id="ctrl-maxdet">
+            <span class="val" id="val-maxdet">100</span></div>
+          <div class="ctrl-actions">
+            <button class="btn btn-start" id="apply-params" onclick="applyParams()">应用参数</button>
+            <span id="param-status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="statusbar">
+    <div class="sb-item"><span class="lbl">PIPELINE</span><b id="sb-pipe">--</b></div>
+    <div class="sb-item"><span class="lbl">节点</span><b id="sb-nodes">--</b></div>
+    <div class="sb-item"><span class="lbl">FPS</span><b id="sb-fps">--</b></div>
+    <div class="sb-item"><span class="lbl">最大队列</span><b id="sb-queue">--</b></div>
+    <div class="sb-item"><span class="lbl">更新于</span><b id="sb-updated">--</b></div>
+  </div>
+</div>
+<script>
+const S = { pipes:[], selectedId:null, topology:null, pollTimer:null, ws:null, rtc:null, rtcWs:null, streamToken:0 };
+
+// --- Tab switching ---
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('panel-'+t.dataset.tab).classList.add('active');
+}));
+
+// --- API helpers ---
+async function api(path, opts={}) {
+  const timeoutMs = opts.timeoutMs || 8000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const {timeoutMs: _timeoutMs, ...fetchOpts} = opts;
+    const r = await fetch(path, {...fetchOpts, signal: controller.signal});
+    if (!r.ok && r.status !== 204) throw new Error(await r.text());
+    if (r.status === 204) return null;
+    return r.json();
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`请求超时: ${path}`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// --- Pipeline list ---
+async function refreshPipelines() {
+  S.pipes = await api('/pipelines');
+  renderPipeList();
+}
+
+function renderPipeList() {
+  document.getElementById('pipe-count').textContent = S.pipes.length;
+  const el = document.getElementById('pipe-list');
+  el.innerHTML = S.pipes.map(p => `
+    <div class="pipe-item ${p.id===S.selectedId?'active':''}" onclick="selectPipe('${p.id}')">
+      <span class="pipe-dot ${p.state}"></span>
+      <div class="pipe-info">
+        <div class="pipe-name">${p.name||p.id}</div>
+        <div class="pipe-state ${p.state}">${p.state}</div>
+      </div>
+      <div class="pipe-btns">
+        ${p.state==='RUNNING'?`<button class="btn btn-stop" onclick="event.stopPropagation();stopPipe('${p.id}')">停止</button>`
+          :`<button class="btn btn-start" onclick="event.stopPropagation();startPipe('${p.id}')">启动</button>`}
+      </div>
+    </div>`).join('');
+}
+
+async function startPipe(id) { await api(`/pipelines/${id}/start`,{method:'POST'}); refreshPipelines(); }
+async function stopPipe(id) { await api(`/pipelines/${id}/stop`,{method:'POST'}); refreshPipelines(); }
+
+function selectPipe(id) {
+  S.selectedId = id;
+  document.getElementById('tab-pipe-id').textContent = id;
+  document.getElementById('sb-pipe').textContent = id;
+  renderPipeList();
+  loadTopology();
+  refreshParamNodes();
+  startPolling();
+  setupStream();
+}
+
+// --- Topology + DAG ---
+async function loadTopology() {
+  if (!S.selectedId) return;
+  try {
+    S.topology = await api(`/pipelines/${S.selectedId}/topology`);
+  } catch(e) { S.topology = null; }
+  renderDAG();
+}
+
+function computeDAGLayout(topo) {
+  if (!topo || !topo.nodes.length) return {layers:[],positions:{},width:0,height:0};
+  const adj = {}, indeg = {};
+  topo.nodes.forEach(n => { adj[n]=[]; indeg[n]=0; });
+  topo.edges.forEach(([a,b]) => { adj[a].push(b); indeg[b]=(indeg[b]||0)+1; });
+  const layers=[]; const placed=new Set();
+  let queue = topo.nodes.filter(n => indeg[n]===0);
+  while (queue.length) {
+    layers.push([...queue]); queue.forEach(n=>placed.add(n));
+    let next=[];
+    queue.forEach(n => adj[n].forEach(m => { indeg[m]--; if(indeg[m]===0 && !placed.has(m)) next.push(m); }));
+    queue=next;
+  }
+  if (!layers.length) layers.push([]);
+  topo.nodes.forEach(n => { if(!placed.has(n)) layers[layers.length-1].push(n); });
+  const W=176, H=92, gapX=72, gapY=36, padX=36, padY=36;
+  const maxLayer = layers.reduce((mx,l)=>Math.max(mx,l.length),0);
+  const totalH = Math.max(H, maxLayer*H + Math.max(0, maxLayer-1)*gapY);
+  const positions={};
+  layers.forEach((layer,li) => {
+    const layerH = layer.length*H + Math.max(0, layer.length-1)*gapY;
+    const startY = padY + (totalH - layerH) / 2;
+    layer.forEach((n,ni) => { positions[n]={x:padX+li*(W+gapX), y:startY+ni*(H+gapY), w:W, h:H}; });
+  });
+  const maxX = Math.max(...Object.values(positions).map(p=>p.x+p.w)) + padX;
+  const maxY = Math.max(...Object.values(positions).map(p=>p.y+p.h)) + padY;
+  return {layers, positions, width:maxX, height:maxY};
+}
+
+function renderDAG() {
+  const svg = document.getElementById('dag-svg');
+  if (!S.topology) { svg.removeAttribute('viewBox'); svg.innerHTML='<text class="dag-empty" x="50%" y="50%" text-anchor="middle">请选择一个 Pipeline</text>'; return; }
+  const {positions, width, height} = computeDAGLayout(S.topology);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  let html='';
+  S.topology.edges.forEach(([a,b]) => {
+    const pa=positions[a], pb=positions[b];
+    if(!pa||!pb) return;
+    const x1=pa.x+pa.w, y1=pa.y+pa.h/2;
+    const x2=pb.x, y2=pb.y+pb.h/2;
+    const cx1=x1+(x2-x1)*0.45, cx2=x2-(x2-x1)*0.45;
+    html+=`<path class="edge-path" d="M${x1},${y1} C${cx1},${y1} ${cx2},${y2} ${x2},${y2}"/>`;
+    html+=`<polygon class="edge-arrow" points="${x2-8},${y2-4.5} ${x2-8},${y2+4.5} ${x2},${y2}"/>`;
+  });
+  S.topology.nodes.forEach(n => {
+    const p=positions[n]; if(!p) return;
+    const label = n.length>20 ? n.slice(0,19)+'…' : n;
+    html+=`<g class="node-card" data-node="${n}">
+      <title>${n}</title>
+      <rect class="box" x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}"/>
+      <rect x="${p.x}" y="${p.y}" width="3" height="${p.h}" rx="1.5" fill="#58a6ff"/>
+      <text class="name" x="${p.x+14}" y="${p.y+22}">${label}</text>
+      <text class="fps" x="${p.x+14}" y="${p.y+42}" id="fps-${n}">-- fps</text>
+      <text class="latency" x="${p.x+14}" y="${p.y+59}" id="lat-${n}">-- ms</text>
+      <g id="qbar-${n}">
+        <rect x="${p.x+14}" y="${p.y+70}" width="${p.w-28}" height="5" rx="2" fill="#21262d"/>
+        <rect x="${p.x+14}" y="${p.y+70}" width="0" height="5" rx="2" fill="#3fb950" id="qfill-${n}"/>
+        <text class="qtxt" x="${p.x+p.w-14}" y="${p.y+86}" text-anchor="end" id="qtxt-${n}"></text>
+      </g>
+    </g>`;
+  });
+  svg.innerHTML=html;
+}
+
+// --- Polling node stats ---
+function startPolling() {
+  if(S.pollTimer) clearInterval(S.pollTimer);
+  S.pollTimer = setInterval(pollNodes, 1500);
+  pollNodes();
+}
+
+async function pollNodes() {
+  if(!S.selectedId) return;
+  try {
+    const nodes = await api(`/pipelines/${S.selectedId}/nodes`);
+    let maxQ = 0, maxQTxt = '--', fpsList = [];
+    nodes.forEach(n => {
+      const fpsEl=document.getElementById('fps-'+n.name);
+      const latEl=document.getElementById('lat-'+n.name);
+      const qfill=document.getElementById('qfill-'+n.name);
+      const qtxt=document.getElementById('qtxt-'+n.name);
+      const qbar=document.getElementById('qbar-'+n.name);
+      if(fpsEl) fpsEl.textContent=n.fps.toFixed(1)+' fps';
+      if(latEl) latEl.textContent=n.latency_ms.toFixed(1)+' ms';
+      if(n.fps>0) fpsList.push(n.fps);  // source 等节点 fps 统计为 0，不计入
+      if(qbar && n.input_queue.capacity===0) { qbar.style.display='none'; }
+      else if(qfill && n.input_queue.capacity>0) {
+        const pct=Math.min(100, n.input_queue.current_size/n.input_queue.capacity*100);
+        const parent=qfill.previousElementSibling;
+        const pw=parseFloat(parent.getAttribute('width'));
+        qfill.setAttribute('width', pw*pct/100);
+        qfill.setAttribute('fill', pct>85?'#f85149':pct>60?'#d29922':'#3fb950');
+        if(qtxt) qtxt.textContent=`${n.input_queue.current_size}/${n.input_queue.capacity}`;
+        if(pct>maxQ) { maxQ=pct; maxQTxt=`${n.input_queue.current_size}/${n.input_queue.capacity}`; }
+      }
+    });
+    document.getElementById('sb-nodes').textContent = nodes.length;
+    document.getElementById('sb-fps').textContent = fpsList.length ? Math.min(...fpsList).toFixed(1) : '--';
+    document.getElementById('sb-queue').textContent = maxQTxt;
+    document.getElementById('sb-updated').textContent = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+  } catch(e) {}
+}
+
+// --- Stream tab ---
+function setStreamMode(mode, text) {
+  const badge=document.getElementById('stream-mode');
+  const status=document.getElementById('stream-status');
+  badge.className='badge';
+  badge.textContent=mode;
+  if(mode==='WebRTC') badge.classList.add('webrtc');
+  else if(mode==='MJPEG') badge.classList.add('mjpeg');
+  else if(mode==='不可用') badge.classList.add('error');
+  else if(mode==='连接中') badge.classList.add('connecting');
+  status.textContent=text||'';
+}
+
+function stopMediaStream() {
+  if(S.rtcWs) { try { S.rtcWs.close(); } catch(e) {} S.rtcWs=null; }
+  if(S.rtc) { try { S.rtc.close(); } catch(e) {} S.rtc=null; }
+  const video=document.getElementById('webrtc-video');
+  const img=document.getElementById('mjpeg-img');
+  video.srcObject=null;
+  video.style.display='none';
+  img.removeAttribute('src');
+  img.style.display='none';
+}
+
+function setupStream() {
+  S.streamToken++;
+  const token=S.streamToken;
+  const ph=document.getElementById('mjpeg-placeholder');
+  stopMediaStream();
+  if(!S.selectedId) {
+    ph.style.display='flex';
+    ph.textContent='请选择一个 Pipeline 查看视频流';
+    setStreamMode('未连接', '请选择一个 Pipeline 查看视频流');
+    return;
+  }
+  ph.style.display='flex';
+  ph.textContent='正在优先尝试 WebRTC...';
+  setStreamMode('连接中', '正在优先尝试 WebRTC，失败后自动回退 MJPEG');
+  connectResultsWS();
+  startWebRTCStream(token).catch(() => fallbackMjpeg(token, 'WebRTC 不可用，已回退 MJPEG'));
+}
+
+async function startWebRTCStream(token) {
+  const video=document.getElementById('webrtc-video');
+  const ph=document.getElementById('mjpeg-placeholder');
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  const wsUrl=`${proto}//${location.host}/ws/${S.selectedId}/webrtc`;
+  const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  const ws=new WebSocket(wsUrl);
+  S.rtc=pc;
+  S.rtcWs=ws;
+
+  const firstFrame = new Promise((resolve, reject) => {
+    const timer=setTimeout(()=>reject(new Error('WebRTC first frame timeout')), 7000);
+    pc.ontrack=(ev)=>{
+      if(token!==S.streamToken) return;
+      video.srcObject=ev.streams[0];
+      video.onloadeddata=()=>{
+        clearTimeout(timer);
+        resolve();
+      };
+    };
+    ws.onerror=()=>reject(new Error('WebRTC signaling error'));
+    ws.onclose=(ev)=>{ if(ev.code===4004) reject(new Error('Pipeline has no WebRTCSink')); };
+  });
+
+  pc.onicecandidate=(ev)=>{
+    if(ev.candidate && ws.readyState===WebSocket.OPEN) {
+      ws.send(JSON.stringify({type:'candidate', candidate:ev.candidate.candidate, sdpMid:ev.candidate.sdpMid}));
+    }
+  };
+  ws.onmessage=async (ev)=>{
+    const d=JSON.parse(ev.data);
+    if(d.type==='offer') {
+      await pc.setRemoteDescription({type:'offer', sdp:d.sdp});
+      const ans=await pc.createAnswer();
+      await pc.setLocalDescription(ans);
+      ws.send(JSON.stringify({type:'answer', sdp:ans.sdp}));
+    } else if(d.type==='candidate') {
+      try { await pc.addIceCandidate({candidate:d.candidate, sdpMid:d.sdpMid}); } catch(e) {}
+    }
+  };
+
+  await firstFrame;
+  if(token!==S.streamToken) return;
+  ph.style.display='none';
+  video.style.display='block';
+  setStreamMode('WebRTC', '当前优先使用 WebRTCSink 实时预览');
+}
+
+function fallbackMjpeg(token, reason) {
+  if(token!==S.streamToken) return;
+  if(S.rtcWs) { try { S.rtcWs.close(); } catch(e) {} S.rtcWs=null; }
+  if(S.rtc) { try { S.rtc.close(); } catch(e) {} S.rtc=null; }
+  const img=document.getElementById('mjpeg-img');
+  const ph=document.getElementById('mjpeg-placeholder');
+  const video=document.getElementById('webrtc-video');
+  video.style.display='none';
+  img.src=`/mjpeg/${S.selectedId}`;
+  img.onload=()=>{
+    if(token!==S.streamToken) return;
+    ph.style.display='none';
+    img.style.display='block';
+    setStreamMode('MJPEG', reason || '当前使用 MjpegSink 预览');
+  };
+  img.onerror=()=>{
+    if(token!==S.streamToken) return;
+    img.style.display='none';
+    ph.style.display='flex';
+    ph.textContent='没有可用的 WebRTCSink 或 MjpegSink 视频流';
+    setStreamMode('不可用', 'Pipeline 中没有可用的 WebRTCSink 或 MjpegSink');
+  };
+}
+
+function connectResultsWS() {
+  if(S.ws) { S.ws.close(); S.ws=null; }
+  if(!S.selectedId) return;
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  S.ws=new WebSocket(`${proto}//${location.host}/ws/${S.selectedId}/results`);
+  const el=document.getElementById('json-results');
+  S.ws.onmessage=(ev)=>{
+    const obj=JSON.parse(ev.data);
+    const ts=new Date().toLocaleTimeString('zh-CN', {hour12:false});
+    const line=document.createElement('div');
+    line.innerHTML=`<span class="ts">${ts}</span> <span class="fid">#${obj.frame_id ?? '?'}</span> dets:<span class="dets">${(obj.detections||[]).length}</span>`;
+    el.prepend(line);
+    if(el.children.length>100) el.removeChild(el.lastChild);
+  };
+}
+
+// --- Control tab ---
+['score','nms'].forEach(k=>{
+  const inp=document.getElementById('ctrl-'+k);
+  inp.oninput=()=>document.getElementById('val-'+k).textContent=(inp.value/100).toFixed(2);
+});
+document.getElementById('ctrl-maxdet').oninput=function(){document.getElementById('val-maxdet').textContent=this.value;};
+document.getElementById('ctrl-node').onchange=function(){document.getElementById('val-node').textContent=this.value || '--';};
+
+function setParamStatus(text, kind) {
+  const el=document.getElementById('param-status');
+  el.className=kind || '';
+  el.textContent=text || '';
+}
+
+async function refreshParamNodes() {
+  const select=document.getElementById('ctrl-node');
+  const val=document.getElementById('val-node');
+  select.innerHTML='';
+  val.textContent='--';
+  setParamStatus('', '');
+  if(!S.selectedId) return;
+  try {
+    const nodes = await api(`/pipelines/${S.selectedId}/nodes`);
+    const candidates = nodes.filter(n => /detector|segment|det|seg/i.test(n.name));
+    const items = candidates.length ? candidates : nodes;
+    select.innerHTML = items.map(n => `<option value="${n.name}">${n.name}</option>`).join('');
+    val.textContent = select.value || '--';
+    if(!candidates.length) setParamStatus('未识别检测节点，请确认目标节点是否支持这些参数', 'error');
+  } catch(e) {
+    setParamStatus(`加载节点失败: ${e.message}`, 'error');
+  }
+}
+
+async function postParam(nodeId, paramName, value) {
+  return api(`/pipelines/${S.selectedId}/params`,{method:'POST',headers:{'Content-Type':'application/json'},timeoutMs:3000,
+    body:JSON.stringify({node_id:nodeId,param_name:paramName,value})});
+}
+
+async function applyParams() {
+  if(!S.selectedId) { setParamStatus('请先选择 Pipeline', 'error'); return; }
+  const nodeId=document.getElementById('ctrl-node').value;
+  if(!nodeId) { setParamStatus('没有可用的目标节点', 'error'); return; }
+  const btn=document.getElementById('apply-params');
+  const score=document.getElementById('ctrl-score').value/100;
+  const nms=document.getElementById('ctrl-nms').value/100;
+  const maxd=parseInt(document.getElementById('ctrl-maxdet').value, 10);
+  btn.disabled=true;
+  setParamStatus('正在应用...', '');
+  try {
+    await Promise.all([
+      postParam(nodeId, 'score_threshold', score),
+      postParam(nodeId, 'nms_threshold', nms),
+      postParam(nodeId, 'max_detections', maxd),
+    ]);
+    setParamStatus(`已应用到 ${nodeId}`, 'ok');
+  } catch(e) {
+    setParamStatus(`应用失败: ${e.message}`, 'error');
+  } finally {
+    btn.disabled=false;
+  }
+}
+
+// --- Init ---
+refreshPipelines();
+setInterval(refreshPipelines, 5000);
+</script>
+</body>
+</html>
