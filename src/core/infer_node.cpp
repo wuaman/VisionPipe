@@ -101,7 +101,12 @@ void InferNode::start() {
 void InferNode::stop(bool drain) {
     NodeState expected = NodeState::RUNNING;
     if (!state_.compare_exchange_strong(expected, NodeState::DRAINING)) {
-        if (state_ == NodeState::INIT || state_ == NodeState::STOPPED) {
+        if (state_ == NodeState::INIT) {
+            // 未启动即 stop：直接进入 STOPPED（契约允许未启动状态下调用 stop）
+            state_ = NodeState::STOPPED;
+            return;
+        }
+        if (state_ == NodeState::STOPPED) {
             return;
         }
     }
