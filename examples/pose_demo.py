@@ -153,6 +153,8 @@ def build_pipeline(args: argparse.Namespace) -> visionpipe.Pipeline:
     pose_engine = visionpipe.TrtModelEngine(str(args.pose_engine))
     pose_cfg = visionpipe.YoloPoseConfig()
     pose_cfg.score_threshold = args.score_threshold
+    # 启用帧级 batch（需 models/yolov8_pose/convert.sh 导出的动态 batch engine）
+    # pose_cfg.max_batch_size = 4
     pose = visionpipe.YoloPoseNode(pose_engine, pose_cfg, "yolo_pose")
 
     return source >> pose >> annotator >> webrtc

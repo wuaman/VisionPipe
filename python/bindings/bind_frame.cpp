@@ -209,7 +209,8 @@ void bind_frame(nb::module_& m) {
         .def_rw("nms_threshold", &YoloPoseConfig::nms_threshold)
         .def_rw("max_detections", &YoloPoseConfig::max_detections)
         .def_rw("num_keypoints", &YoloPoseConfig::num_keypoints)
-        .def_rw("workers", &YoloPoseConfig::workers);
+        .def_rw("workers", &YoloPoseConfig::workers)
+        .def_rw("max_batch_size", &YoloPoseConfig::max_batch_size);
 
     nb::class_<Detection>(m, "Detection")
         .def(nb::init<>())

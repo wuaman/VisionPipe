@@ -10,12 +10,12 @@ namespace visionpipe {
 
 /// @brief YOLO-pose 解码参数
 struct YoloPoseParams {
-    float score_threshold = 0.25f;  ///< 人体检测置信度阈值
-    float nms_threshold = 0.45f;    ///< NMS IoU 阈值
-    int max_detections = 100;       ///< 最大检测数量
-    int num_keypoints = 17;         ///< 关键点数（COCO-17）
-    int input_width = 640;          ///< 模型输入宽度
-    int input_height = 640;         ///< 模型输入高度
+  float score_threshold = 0.25f; ///< 人体检测置信度阈值
+  float nms_threshold = 0.45f;   ///< NMS IoU 阈值
+  int max_detections = 100;      ///< 最大检测数量
+  int num_keypoints = 17;        ///< 关键点数（COCO-17）
+  int input_width = 640;         ///< 模型输入宽度
+  int input_height = 640;        ///< 模型输入高度
 };
 
 /// @brief YOLOv8/11-pose 输出解码器
@@ -27,16 +27,25 @@ struct YoloPoseParams {
 ///   visibility 已 sigmoid
 class YoloPoseDecoder {
 public:
-    /// @brief 解码 YOLO-pose 输出
-    /// @param output 检测输出 tensor [1, 5+K*3, num_anchors]
-    /// @param detections 输出检测（bbox 归一化到原图）
-    /// @param poses 输出关键点（归一化到原图，detection_index 对齐 detections 下标）
-    static void decode(const Tensor& output,
-                       std::vector<Detection>& detections,
-                       std::vector<PoseResult>& poses,
-                       const YoloPoseParams& params,
-                       const LetterboxParams& letterbox_params,
-                       int orig_width, int orig_height);
+  /// @brief 解码 YOLO-pose 输出（单帧，batch=1）
+  /// @param output 检测输出 tensor [1, 5+K*3, num_anchors]
+  /// @param detections 输出检测（bbox 归一化到原图）
+  /// @param poses 输出关键点（归一化到原图，detection_index 对齐 detections
+  /// 下标）
+  static void decode(const Tensor &output, std::vector<Detection> &detections,
+                     std::vector<PoseResult> &poses,
+                     const YoloPoseParams &params,
+                     const LetterboxParams &letterbox_params, int orig_width,
+                     int orig_height);
+
+  /// @brief 解码单帧切片（batch 推理输出按帧切片调用）
+  /// @param frame_data 指向该帧 [channels, num_anchors] 连续数据起点
+  static void decode_frame(const float *frame_data, int channels,
+                           int num_anchors, std::vector<Detection> &detections,
+                           std::vector<PoseResult> &poses,
+                           const YoloPoseParams &params,
+                           const LetterboxParams &letterbox_params,
+                           int orig_width, int orig_height);
 };
 
-}  // namespace visionpipe
+} // namespace visionpipe

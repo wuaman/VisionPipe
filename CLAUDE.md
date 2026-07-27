@@ -117,7 +117,7 @@ uv run mypy python/
 | `ClassifierNode` | `src/nodes/infer/classifier_node.h` | `ClassifierConfig` | 裁切+分类推理 |
 | `YoloSegNode` | `src/nodes/infer/yolo_seg_node.h` | `YoloSegConfig` | YOLOv8/11-seg 实例分割（检测+掩码双输出），旧名 SegmentNode 保留为 Python 别名 |
 | `RtmPoseNode` | `src/nodes/infer/rtmpose_node.h` | `RtmPoseConfig` | RTMPose top-down 关键点检测（SimCC 解码，依赖上游检测框） |
-| `YoloPoseNode` | `src/nodes/infer/yolo_pose_node.h` | `YoloPoseConfig` | YOLOv8/11-pose 单阶段关键点检测（框+关键点一次输出） |
+| `YoloPoseNode` | `src/nodes/infer/yolo_pose_node.h` | `YoloPoseConfig` | YOLOv8/11-pose 单阶段关键点检测（框+关键点一次输出），支持帧级 batch（`max_batch_size>1` 需动态 batch engine） |
 | `ByteTrackNode` | `src/nodes/tracker/bytetrack_node.h` | `ByteTrackConfig` | CPU 多目标跟踪 |
 | `AnnotatorNode` | `src/nodes/visualize/annotator_node.h` | `AnnotatorConfig` | 可视化标注（检测框/轨迹/掩码） |
 | `JsonResultSink` | `src/nodes/sink/json_result_sink.h` | `JsonResultSinkConfig` | JSON 结构化输出（内部队列 + pop_json） |

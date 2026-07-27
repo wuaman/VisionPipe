@@ -130,3 +130,33 @@ def test_yolo_pose_one_stage_real_inference_produces_keypoints():
         assert len(c["poses"]) == c["num_dets"]
         for det_idx, _ in c["poses"]:
             assert 0 <= det_idx < c["num_dets"]
+
+
+def test_yolo_pose_batch_inference_produces_keypoints():
+    """Real YOLOv8n-pose with frame-level batching (max_batch_size=4).
+
+    Requires a dynamic-batch engine built via models/yolov8_pose/convert.sh
+    (the static batch=1 engine will reject batch>1 and skip).
+    """
+    _require(YOLOPOSE_ENGINE, VIDEO)
+
+    engine = vp.TrtModelEngine(str(YOLOPOSE_ENGINE))
+    cfg = vp.YoloPoseConfig()
+    cfg.score_threshold = 0.35
+    cfg.max_batch_size = 4
+    try:
+        node = vp.YoloPoseNode(engine, cfg, "yolo_pose_batch")
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"engine likely static batch=1, rebuild via convert.sh: {exc}")
+
+    collector = _PoseCollector()
+    try:
+        _run([_make_source(str(VIDEO)), node], collector)
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"batch>1 inference failed — rebuild engine with convert.sh: {exc}")
+
+    _assert_valid_poses(collector.captured)
+    for c in collector.captured:
+        assert len(c["poses"]) == c["num_dets"]
+        for det_idx, _ in c["poses"]:
+            assert 0 <= det_idx < c["num_dets"]

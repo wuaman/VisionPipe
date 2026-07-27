@@ -214,6 +214,7 @@ def _node_params(node: Any) -> dict[str, Any]:
             "nms_threshold": cfg.nms_threshold,
             "max_detections": cfg.max_detections,
             "workers": cfg.workers,
+            "max_batch_size": cfg.max_batch_size,
         }
     if type_name == "ByteTrackNode":
         cfg = node.config()

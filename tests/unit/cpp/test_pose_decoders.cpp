@@ -181,4 +181,65 @@ TEST_F(YoloPoseDecoderTest, NmsSuppressesOverlappingCandidates) {
     EXPECT_FLOAT_EQ(dets[0].confidence, 0.9f);
 }
 
+TEST_F(YoloPoseDecoderTest, DecodesBatchedOutputByFrameIndex) {
+    // 构造 [2, channels, num_anchors]：帧 0 anchor 0 有效，帧 1 anchor 1 有效，坐标不同
+    const int K = 17, num_anchors = 8;
+    const int channels = 5 + K * 3;
+    const int frame_stride = channels * num_anchors;
+    Tensor t({2, channels, num_anchors}, DataType::FLOAT32, &allocator_);
+    float* data = static_cast<float*>(t.data);
+    std::fill(data, data + t.numel(), 0.0f);
+
+    auto set_anchor = [&](int b, int i, float cx, float cy, float w, float h,
+                          float conf, float kpt_x, float kpt_y, float kpt_score) {
+        float* f = data + b * frame_stride;
+        f[0 * num_anchors + i] = cx;
+        f[1 * num_anchors + i] = cy;
+        f[2 * num_anchors + i] = w;
+        f[3 * num_anchors + i] = h;
+        f[4 * num_anchors + i] = conf;
+        for (int k = 0; k < K; ++k) {
+            f[(5 + k * 3 + 0) * num_anchors + i] = kpt_x;
+            f[(5 + k * 3 + 1) * num_anchors + i] = kpt_y;
+            f[(5 + k * 3 + 2) * num_anchors + i] = kpt_score;
+        }
+    };
+
+    // 帧间用不同 letterbox（原图尺寸不同）验证切片独立
+    auto lb0 = LetterboxResize::compute_params(640, 640, 640, 640);  // scale=1, pad=0
+    auto lb1 = LetterboxResize::compute_params(1280, 720, 640, 640);  // scale=0.5, pad_y=140
+
+    // 帧 0：letterbox (320,320) → 原图 (320,320) → 归一化 (0.5,0.5)
+    set_anchor(0, 0, 320, 320, 100, 80, 0.9f, 320, 320, 0.8f);
+    // 帧 1：letterbox (320,320) → 原图 (640,360) → 归一化 (0.5,0.5)
+    set_anchor(1, 1, 320, 320, 100, 80, 0.85f, 320, 320, 0.7f);
+
+    YoloPoseParams params;
+    params.score_threshold = 0.5f;
+
+    // 帧 0 切片
+    std::vector<Detection> dets0;
+    std::vector<PoseResult> poses0;
+    YoloPoseDecoder::decode_frame(data + 0 * frame_stride, channels, num_anchors,
+                                  dets0, poses0, params, lb0, 640, 640);
+    ASSERT_EQ(dets0.size(), 1u);
+    EXPECT_FLOAT_EQ(dets0[0].confidence, 0.9f);
+    ASSERT_EQ(poses0[0].keypoints.size(), 17u);
+    EXPECT_NEAR(poses0[0].keypoints[0].x, 0.5f, 1e-4f);
+    EXPECT_NEAR(poses0[0].keypoints[0].y, 0.5f, 1e-4f);
+
+    // 帧 1 切片（不同 anchor 索引、不同 letterbox）
+    std::vector<Detection> dets1;
+    std::vector<PoseResult> poses1;
+    YoloPoseDecoder::decode_frame(data + 1 * frame_stride, channels, num_anchors,
+                                  dets1, poses1, params, lb1, 1280, 720);
+    ASSERT_EQ(dets1.size(), 1u);
+    EXPECT_FLOAT_EQ(dets1[0].confidence, 0.85f);
+    ASSERT_EQ(poses1[0].keypoints.size(), 17u);
+    // letterbox (320,320) → 原图 ((320-0)/0.5,(320-140)/0.5)=(640,360) → 归一化 (0.5,0.5)
+    EXPECT_NEAR(poses1[0].keypoints[0].x, 0.5f, 1e-4f);
+    EXPECT_NEAR(poses1[0].keypoints[0].y, 0.5f, 1e-4f);
+    EXPECT_FLOAT_EQ(poses1[0].keypoints[0].score, 0.7f);
+}
+
 }  // namespace visionpipe
