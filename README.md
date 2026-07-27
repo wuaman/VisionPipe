@@ -1,26 +1,47 @@
+<p align="center">
+  <a href="README.md">简体中文</a> · <a href="README_EN.md">English</a>
+</p>
+
 # VisionPipe-py
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-green.svg)](https://www.python.org/)
 [![C++](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-11.8%2B-green.svg)](https://developer.nvidia.com/cuda-toolkit)
+[![TensorRT](https://img.shields.io/badge/TensorRT-8.6%2B-76B900.svg)](https://developer.nvidia.com/tensorrt)
 
-**VisionPipe-py** 是一个面向生产环境的**视频 AI 推理框架**，底层由 C++（CUDA/TensorRT）驱动以保证高性能，业务层由 Python 实现以保证灵活性。框架以**有向无环图（DAG）节点管道**为核心抽象，用户通过 Python DSL 编排节点，框架负责调度、并发、资源管理和硬件适配。
+> **用 Python 写业务，用 C++ 榨干 GPU。**
+> 面向生产环境的视频 AI 推理框架 —— 以 DAG 节点管道为核心抽象，一条 `>>` 链就能把解码、推理、跟踪、落库串成高吞吐流水线。
 
-## 核心特点
+VisionPipe-py 把 TensorRT 的极致性能藏进 C++ 热路径，把编排自由度交给 Python。你只需声明节点和拓扑，框架替你搞定调度、并发、显存复用、优雅启停和硬件适配 —— 从单路 1080p 实时检测到同卡 16 路并发，同一套 API，同一份代码。
 
-| 特点 | 说明 |
-|------|------|
-| **Python DSL 编排** | 用 `>>` 运算符连接节点构图，可导出/导入 YAML 用于版本化和运维下发 |
-| **C++ 热路径，零 GIL 干扰** | 推理、编解码、调度全在 C++ 线程池；Python 业务节点回调时短暂 acquire GIL |
-| **同进程多 Pipeline** | `PipelineManager` 支持动态创建/销毁多条 pipeline，无需 Docker 隔离 |
-| **模型去重复用** | `ModelRegistry` 按引擎文件 SHA-256 去重，多条 pipeline 共享同一 `IModelEngine`，节省显存 |
-| **优雅启停协议** | DRAINING → teardown → STOPPED 三段式退出，GPU 资源安全释放（<500ms） |
-| **节点并发扩展** | 瓶颈节点配置 `parallel_workers=N`，多个 worker 共享模型权重独立执行上下文 |
-| **有界队列 + 溢出策略** | 每节点有界输入队列；实时流默认 `DROP_OLDEST` 保低延迟，文件处理可选 `BLOCK` 不丢帧 |
-| **ROI 实时热更** | 前端 canvas 框选 → WebSocket 归一化坐标 → C++ `set_param()` 原子写 → 下一帧生效 |
-| **HAL 硬件抽象** | `IModelEngine` / `IExecContext` / `IAllocator` 三接口屏蔽厂商差异 |
-| **内置可观测性** | 每节点暴露队列占用率、丢帧计数、FPS；健康接口 `GET /pipelines/{id}/health` |
+## 为什么选 VisionPipe-py
+
+```python
+src  >> det >> track >> annotator >> sink     # 一行声明，全链路 GPU 加速
+```
+
+| | 传统做法 | VisionPipe-py |
+|---|---|---|
+| **性能** | Python 调度 + 频繁 GIL 抢占 | C++ 线程池跑热路径，Python 仅在回调时短暂持 GIL |
+| **显存** | 每路一份模型权重 | `ModelRegistry` 按 SHA-256 去重，多路共享同一 `IModelEngine`，16 路省 ≥30% 显存 |
+| **编排** | 手写线程/队列/同步 | DAG 节点 + 有界队列，`>>` 运算符构图，YAML 可序列化 |
+| **并发** | 单线程瓶颈或手撸 worker 池 | 瓶颈节点配 `parallel_workers=N`，多 worker 共享权重独立上下文，按 `frame_id` 自动重排 |
+| **运维** | Docker 隔离多路 | 同进程 `PipelineManager` 动态增删 pipeline，REST/WS 热更参数 |
+| **退出** | 强杀留显存泄漏 | DRAINING → teardown → STOPPED 三段式，<500ms 安全释放 |
+
+## 核心特性
+
+- **🐍 Python DSL 编排** — `>>` 运算符连接节点构图，可导出/导入 YAML 用于版本化和运维下发
+- **⚙️ C++ 热路径，零 GIL 干扰** — 推理、编解码、调度全在 C++ 线程池；业务节点回调时才短暂 acquire GIL
+- **🔀 同进程多 Pipeline** — `PipelineManager` 动态创建/销毁多条 pipeline，无需 Docker 隔离
+- **♻️ 模型去重复用** — `ModelRegistry` 按引擎文件 SHA-256 去重，多 pipeline 共享 `IModelEngine`，省显存
+- **🛑 优雅启停协议** — DRAINING → teardown → STOPPED 三段式退出，GPU 资源 <500ms 安全释放
+- **🚀 节点并发扩展** — 瓶颈节点配 `parallel_workers=N`，多 worker 共享权重、独立执行上下文，按 `frame_id` 重排序输出
+- **📦 有界队列 + 溢出策略** — 实时流默认 `DROP_OLDEST` 保低延迟，文件处理可选 `BLOCK` 不丢帧
+- **🎯 ROI 实时热更** — 前端 canvas 框选 → WebSocket 归一化坐标 → C++ `set_param()` 原子写 → 下一帧生效
+- **🔌 HAL 硬件抽象** — `IModelEngine` / `IExecContext` / `IAllocator` 三接口屏蔽厂商差异，NVIDIA 已落地，Ascend/RKNN 预留
+- **📊 内置可观测性** — 每节点暴露队列占用率、丢帧计数、FPS，`GET /pipelines/{id}/health` 一键体检
 
 ## 系统架构
 
@@ -57,98 +78,74 @@
 │                                                                       │
 │  ┌────────────────────────────────────────────────────────────────┐  │
 │  │                    HAL 硬件抽象层                               │  │
-│  │  IModelEngine   IExecContext   IAllocator   ICodec (二期)       │  │
-│  │       │               │            │           │               │  │
-│  │  TrtEngine     TrtExecCtx    CudaAlloc    NvDecCodec (二期)    │  │
-│  │  AscendEngine  AscendExecCtx AclAlloc     AscendCodec (三期)   │  │
-│  │  RknnEngine    RknnExecCtx   RknnAlloc    (四期)               │  │
+│  │  IModelEngine   IExecContext   IAllocator                       │  │
+│  │       │               │            │                            │  │
+│  │  TrtEngine     TrtExecCtx    CudaAlloc      ← 一期已落地        │  │
+│  │  AscendEngine  AscendExecCtx AclAlloc       ← 预留              │  │
+│  │  RknnEngine    RknnExecCtx   RknnAlloc      ← 预留              │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## 环境要求
+## 节点库
 
-### 必需依赖
-
-| 组件 | 版本要求 | 验证命令 |
-|------|----------|----------|
-| CUDA Toolkit | >=11.8 | `nvcc --version` |
-| cuDNN | >=8.6 | `cat /usr/local/cuda/include/cudnn_version.h` |
-| TensorRT | >=8.6 | `trtexec --version` |
-| Python | >=3.10 | `python3 --version` |
-| CMake | >=3.20 | `cmake --version` |
-| GCC | >=9.0 | `g++ --version` |
-| uv | 最新版 | `uv --version` |
-| clang-format | >=14 | `clang-format --version` |
-
-### GPU 环境
-
-⚠️ **重要**：本项目的所有测试（单元测试、集成测试、E2E 测试）均需在真实 GPU 环境运行。
-
-- 开发机必须配备 NVIDIA GPU（推荐 RTX 3090 或更高）
-- CUDA 驱动版本 >= 525.60.13
-- 确保 `nvidia-smi` 正常输出
+| 类别 | 节点 | 能力 |
+|------|------|------|
+| **Source** | `FileSource` / `RtspSource` | 本地文件 / RTSP 流，NVDEC GPU 解码优先，不可用时回退 CPU |
+| **Infer** | `DetectorNode` | YOLOv8/11 目标检测 + NMS，支持 ROI 热更 |
+| | `ClassifierNode` | 裁切 + 分类推理（ResNet / EfficientNet / ShuffleNet） |
+| | `YoloSegNode` | YOLOv8/11-seg 实例分割（检测 + 掩码双输出） |
+| | `RtmPoseNode` | RTMPose top-down 关键点检测（SimCC 解码，依赖上游检测框） |
+| | `YoloPoseNode` | YOLOv8/11-pose 单阶段关键点（框 + 关键点一次输出，支持帧级 batch） |
+| **Track** | `ByteTrackNode` | CPU 多目标跟踪 |
+| **Viz** | `AnnotatorNode` | 检测框 / 轨迹 / 掩码可视化标注 |
+| **Sink** | `JsonResultSink` | JSON 结构化输出（`pop_json`） |
+| | `MjpegSink` | JPEG 编码推流（`pop_jpeg`） |
+| | `WebRTCSink` | WebRTC 实时推流（libdatachannel + NVENC，需启用编译选项） |
+| **Custom** | `PyNode` / `CustomNode` | 同进程回调（轻量） / 独立子进程（重逻辑，真并行无 GIL） |
 
 ## 快速开始
 
-### 1. 安装 uv（Python 包管理器）
+### 1. 准备环境
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
+# 必需：CUDA >=11.8 / cuDNN >=8.6 / TensorRT >=8.6 / Python >=3.10 / CMake >=3.20 / GCC >=9
+# 推荐开发 GPU：RTX 3090 或更高，驱动 >=525.60.13
 
-### 2. 克隆项目并创建虚拟环境
-
-```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh      # 安装 uv
 git clone https://github.com/your-org/VisionPipe-py.git
 cd VisionPipe-py
-
-# 创建虚拟环境并安装依赖
-uv venv
-source .venv/bin/activate  # Linux/macOS
-# 或 .venv\Scripts\activate  # Windows
-
+uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-### 3. 构建 C++ 核心库和 Python 扩展
+### 2. 构建 C++ 核心与 Python 扩展
 
 ```bash
-# 配置并构建
-cmake -B build
-cmake --build build
+cmake -B build && cmake --build build
+cmake --build build --target visionpipe_python    # nanobind 扩展
 
-# 构建 Python 扩展（nanobind）
-cmake --build build --target visionpipe_python
+# 启用 WebRTC 推流（可选）
+cmake -B build -DVISIONPIPE_USE_WEBRTC=ON && cmake --build build
 ```
 
-### 4. 运行测试
+### 3. 跑通示例
 
 ```bash
-# C++ 测试（需要 GPU）
-ctest --test-dir build
+uv run python examples/quickstart.py    # 单 Pipeline：检测 + JSON 输出，5 秒出结果
+```
 
-# Python 测试（需要 GPU）
-uv run pytest
+### 4. 验证测试（需 GPU）
+
+```bash
+ctest --test-dir build                  # C++ 测试
+uv run pytest                           # Python 测试
 ```
 
 ## 使用示例
 
-> 📁 完整可运行示例在 [`examples/`](examples/) 目录：
-> - [`examples/quickstart.py`](examples/quickstart.py) — 单 Pipeline 入门 demo（检测 + JSON 输出）
-> - [`examples/multi_pipeline_demo.py`](examples/multi_pipeline_demo.py) — 多 Pipeline 并发 + 共享 engine + 生命周期隔离
-
-按 README 完成依赖安装与构建后，10 分钟内即可跑通：
-
-```bash
-# 1. 单 Pipeline 检测演示（运行 5 秒，打印前 3 帧 JSON 结果与 FPS）
-uv run python examples/quickstart.py
-
-# 2. 多 Pipeline 并发演示（vehicle vs person 双场景，验证类别隔离 + 生命周期隔离）
-uv run python examples/multi_pipeline_demo.py
-```
-
-完整 Python API 参考见 [`docs/api_reference.md`](docs/api_reference.md)。
+> 📁 完整可运行示例在 [`examples/`](examples/)：
+> [`quickstart.py`](examples/quickstart.py) · [`multi_pipeline_demo.py`](examples/multi_pipeline_demo.py) · [`pose_demo.py`](examples/pose_demo.py) · [`segment_demo.py`](examples/segment_demo.py) · [`roi_hotupdate_demo.py`](examples/roi_hotupdate_demo.py) · [`webrtc_demo.py`](examples/webrtc_demo.py)
 
 ### Python DSL 编排 Pipeline
 
@@ -159,31 +156,26 @@ from visionpipe import (
     JsonResultSink, JsonResultSinkConfig,
 )
 
-# 定义节点
 src_cfg = SourceConfig("video.mp4")
-src_cfg.decode_mode = DecodeMode.AUTO  # NVDEC 优先，不可用则回退 CPU
+src_cfg.decode_mode = DecodeMode.AUTO      # NVDEC 优先，不可用则回退 CPU
 src = FileSource(src_cfg)
 
 engine = TrtModelEngine("models/yolov8/yolov8n_dynamic.engine")
 det_cfg = DetectorConfig()
 det_cfg.score_threshold = 0.25
-det_cfg.workers = 2  # 并行 worker，自动按 frame_id 重排序输出
+det_cfg.workers = 2                        # 并行 worker，自动按 frame_id 重排序
 det = DetectorNode(engine, det_cfg, "detector")
 
 sink = JsonResultSink(JsonResultSinkConfig(), "sink")
 
-# 用 >> 运算符链式构建 Pipeline (Phase 3 DSL)
+# 一行串起整条流水线
 pipe = src >> det >> sink
-
-# 启动 (block=True 阻塞至 source 自然结束；block=False 后台运行)
-pipe.run(block=False)
+pipe.run(block=False)                      # block=False 后台运行
 # ... 业务消费 sink.pop_json(timeout_ms=200) ...
 pipe.stop()
 ```
 
 ### 自定义业务节点
-
-VisionPipe-py 提供两种自定义节点：
 
 ```python
 # 方式 1: PyNode — 同进程回调，适合极轻量逻辑
@@ -199,7 +191,6 @@ class AlertNode(PyNode):
         if hits:
             frame.set_user_data("alert_count", len(hits))
 
-# 链路：PyNode/CustomNode 自动 unwrap 到 _cpp_node
 pipe = src >> det >> AlertNode([0, 2]) >> sink
 ```
 
@@ -213,28 +204,23 @@ class AnalyzeNode(CustomNode):
 
 node = AnalyzeNode(name="analyze", process_mode="subprocess")
 pipe = src >> det >> node._cpp_node >> sink
-# 退出前调用 node.stop() 释放子进程
+node.stop()                                # 退出前释放子进程
 ```
 
 ### YAML 配置导入/导出
 
 ```python
-# 导出 pipeline 拓扑 + 节点参数到 YAML
-pipe.export_yaml("pipeline.yaml")
+pipe.export_yaml("pipeline.yaml")          # 导出拓扑 + 节点参数
 
-# 仅解析 YAML 得到 PipelineSpec（不需要 GPU）
-spec = Pipeline.load_yaml("pipeline.yaml")
+spec = Pipeline.load_yaml("pipeline.yaml") # 仅解析（不需 GPU）
 
-# 完整重建：需用 node_overrides 注入有外部依赖的节点
-rebuilt = Pipeline.from_yaml(
+rebuilt = Pipeline.from_yaml(              # 完整重建：注入有外部依赖的节点
     "pipeline.yaml",
     node_overrides={"src": src, "det": det, "sink": sink},
 )
 ```
 
-### REST 管理 API
-
-启动嵌入式 REST + WebSocket 服务（aiohttp）：
+### REST + WebSocket 管理 API
 
 ```python
 import asyncio, visionpipe as vp
@@ -250,82 +236,50 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-常用端点：
-
 ```bash
-# 创建 pipeline (body: {"spec": <PipelineSpec dict or YAML string>})
-curl -X POST http://localhost:8080/pipelines -H "Content-Type: application/json" -d @spec.json
-
-# 列表 / 启动 / 停止 / 销毁
-curl http://localhost:8080/pipelines
-curl -X POST http://localhost:8080/pipelines/{id}/start
-curl -X POST http://localhost:8080/pipelines/{id}/stop
-curl -X DELETE http://localhost:8080/pipelines/{id}
-
-# 健康 + 节点状态
-curl http://localhost:8080/pipelines/{id}/health
-curl http://localhost:8080/pipelines/{id}/nodes
-
-# 通用参数热更
-curl -X POST http://localhost:8080/pipelines/{id}/params \
+curl -X POST http://localhost:8080/pipelines -H "Content-Type: application/json" -d @spec.json  # 创建
+curl http://localhost:8080/pipelines                                                         # 列表
+curl -X DELETE http://localhost:8080/pipelines/{id}                                          # 销毁
+curl http://localhost:8080/pipelines/{id}/health                                             # 健康
+curl -X POST http://localhost:8080/pipelines/{id}/params \                                   # 参数热更
   -H "Content-Type: application/json" \
   -d '{"node_id": "detector", "param_name": "score_threshold", "value": 0.5}'
 ```
 
-WebSocket 端点：
-
-| 路径 | 用途 |
-|------|------|
+| WS 端点 | 用途 |
+|---------|------|
 | `/ws/{id}/results` | 推送 JsonResultSink 每帧 JSON |
 | `/ws/{id}/control` | 通用控制通道（`ping` / `set_param` / `roi`） |
 | `/ws/{id}/webrtc` | WebRTC SDP/ICE 信令（需启用 `VISIONPIPE_USE_WEBRTC=ON`） |
+
+## 性能目标
+
+| 指标 | 目标值（RTX 3090） |
+|------|-------------------|
+| 单路 1080p YOLOv8 吞吐 | ≥25 FPS |
+| 16 路 1080p 同卡总吞吐 | ≥200 FPS |
+| Pipeline 启动耗时（模型已缓存） | <500ms |
+| 优雅停止耗时 | <500ms |
+| ROI 热更生效延迟 | ≤1 帧（@25fps ≈ 40ms） |
+| GPU 显存占用（16 路，共享模型） | 对比不共享减少 ≥30% |
 
 ## 项目结构
 
 ```
 VisionPipe-py/
 ├── src/
-│   ├── core/                # C++ 核心调度框架
-│   │   ├── pipeline.h/cpp           # Pipeline 执行引擎
-│   │   ├── pipeline_manager.h/cpp   # Pipeline 生命周期管理
-│   │   ├── node_base.h/cpp          # 节点基类
-│   │   ├── infer_node.h/cpp         # 推理节点（parallel_workers）
-│   │   ├── model_registry.h/cpp     # 模型去重、引用计数、TTL
-│   │   ├── bounded_queue.h          # 有界队列（DROP_OLDEST/BLOCK）
-│   │   ├── frame.h                  # Frame 数据结构
-│   │   ├── tensor.h                 # Tensor 内存管理
-│   │   └── error.h                  # 异常层次
-│   │
-│   ├── hal/                 # 硬件抽象层
-│   │   ├── imodel_engine.h          # IModelEngine 接口
-│   │   └── nvidia/                  # NVIDIA TensorRT 实现（一期）
-│   │
-│   └── nodes/               # 节点实现
-│       ├── source/                  # FileSource / RtspSource
-│       ├── infer/                   # DetectorNode / ClassifierNode / SegmentNode
-│       └── sink/                    # WebRTCSink / JsonResultSink / MjpegSink
-│
+│   ├── core/          # C++ 核心调度（Pipeline / PipelineManager / InferNode / ModelRegistry / BoundedQueue）
+│   ├── hal/           # 硬件抽象层（IModelEngine / IExecContext / IAllocator，NVIDIA 实现）
+│   └── nodes/         # 节点实现（source / infer / tracker / visualize / sink）
 ├── python/
-│   ├── visionpipe/          # Python 包
-│   ├── bindings/            # nanobind C++ 绑定
-│   └── server/              # REST API + WebSocket
-│
-├── tests/
-│   ├── unit/cpp/            # C++ 单元测试（Google Test）
-│   ├── unit/python/         # Python 单元测试（pytest）
-│   ├── integration/         # 集成测试（需 GPU）
-│   └── e2e/                 # 端到端测试
-│
-├── models/                  # 模型文件（ONNX/TRT Engine）
-├── benchmarks/              # 性能基准测试
-├── examples/                # 示例代码
-├── docs/                    # 文档
-│
-├── CMakeLists.txt           # CMake 配置
-├── pyproject.toml           # Python 包配置（uv）
-├── CLAUDE.md                # Claude Code 开发指南
-├── DEV_SPEC.md              # 详细开发规范
-└── README.md                # 本文件
+│   ├── visionpipe/    # Python 包（DSL / PyNode / CustomNode / 序列化）
+│   ├── bindings/      # nanobind C++ 绑定
+│   └── server/        # REST API + WebSocket
+├── tests/             # unit / integration / e2e（均需 GPU）
+├── examples/          # 可运行示例
+├── docs/              # 文档
+├── CMakeLists.txt
+└── pyproject.toml
 ```
 
 ## 开发路线
@@ -334,76 +288,27 @@ VisionPipe-py/
 |------|------|------|
 | Phase 0 | 工程骨架 + CI 基础 | ✅ 完成 |
 | Phase 1 | C++ 核心调度框架 | ✅ 完成 |
-| Phase 2 | NVIDIA 推理 + 编解码 | ✅ 完成 |
-| Phase 3 | Python 绑定 + DSL | ✅ 完成 |
-| Phase 4 | 管理 API + 前端交付 | ✅ 完成 |
-| Phase 5 | 集成验证 + 收尾 | ✅ 完成 |
+| Phase 2 | NVIDIA 推理 + 编解码 | ✅ 核心可用 |
+| Phase 3 | Python 绑定 + DSL | ✅ 基础完成 |
+| Phase 4 | 管理 API + 前端交付 | ✅ REST+WS 框架完成 |
+| Phase 5 | 集成验证 + 收尾 | 🚧 进行中 |
 
-### 一期验证模型
-
-| 任务 | 模型 | 优先级 |
-|------|------|--------|
-| 目标检测 | YOLOv8 / YOLOv11 | P0 |
-| 图像分类 | ResNet50 / EfficientNet-B0 / ShuffleNetV2 | P0 |
-| 实例分割 | YOLOv8-seg | P1 |
-| 目标追踪 | ByteTrack | P1 |
-
-## 性能目标
-
-| 指标 | 目标值（RTX 3090） |
-|------|-------------------|
-| 单路 1080p YOLOv8 吞吐 | ≥25 FPS |
-| 16路 1080p 同卡总吞吐 | ≥200 FPS |
-| Pipeline 启动耗时（模型已缓存） | <500ms |
-| 优雅停止耗时 | <500ms |
-| ROI 热更生效延迟 | ≤1 帧（@25fps = 40ms） |
-| GPU 显存占用（16路，共享模型） | 对比不共享减少 ≥30% |
+**已验证模型矩阵：** YOLOv8/11（检测） · ResNet50 / EfficientNet-B0 / ShuffleNetV2（分类） · YOLOv8-seg（分割） · RTMPose / YOLOv8-pose（关键点） · ByteTrack（跟踪）
 
 ## 开发指南
 
-### 代码风格
-
 ```bash
-# C++ 格式化
-find src -name "*.h" -o -name "*.cpp" | xargs clang-format -i
+# 代码风格
+find src -name "*.h" -o -name "*.cpp" | xargs clang-format -i   # C++
+uv run ruff check python/ && uv run ruff format python/         # Python
+uv run mypy python/                                             # 类型检查
 
-# Python 代码检查和类型检查
-uv run ruff check python/
-uv run ruff format python/
-uv run mypy python/
+# 运行测试
+ctest --test-dir build -R test_bounded_queue                    # 指定 C++ 测试
+uv run pytest tests/unit/python/test_bindings.py -v             # 指定 Python 测试
 ```
 
-### 运行测试
-
-```bash
-# C++ 测试
-ctest --test-dir build
-
-# 指定测试
-ctest --test-dir build -R test_bounded_queue
-
-# Python 测试
-uv run pytest
-
-# 指定测试文件
-uv run pytest tests/unit/python/test_bindings.py -v
-```
-
-### 阶段门禁
-
-每个开发阶段结束前必须满足：
-1. 所有测试通过：`ctest --test-dir build` 和 `uv run pytest`
-2. 核心模块覆盖率 >90%，整体 >80%
-3. 代码风格检查通过
-4. 无内存泄漏（Valgrind/ASAN）
-
-## 包管理策略
-
-| 依赖类型 | 管理方式 | 示例 |
-|----------|----------|------|
-| Python 包 | uv (pyproject.toml) | pytest, ruff, mypy |
-| C++ 重依赖 | 系统包管理器或源码编译 | CUDA, TensorRT, OpenCV（需 CUDA 模块） |
-| C++ 轻依赖 | CMake FetchContent | spdlog, nlohmann-json, googletest, nanobind |
+**阶段门禁：** 所有测试通过 · 核心模块覆盖 >90% / 整体 >80% · 风格检查通过 · 无内存泄漏（Valgrind/ASAN）
 
 ## 文档
 
@@ -418,11 +323,12 @@ Apache License 2.0
 
 ## 贡献
 
-欢迎贡献代码、报告问题或提出建议。请遵循：
+欢迎贡献代码、报告问题或提出建议：
+
 1. 通过 GitHub Issues 报告问题
-2. 提交 PR 前确保所有测试通过
+2. 提交 PR 前确保所有测试通过（`ctest` + `uv run pytest`）
 3. 遵循项目的代码风格规范
 
 ---
 
-**VisionPipe-py** - 高性能视频 AI 推理框架，让 Python 开发者也能轻松驾驭 GPU 加速的视频处理。
+**VisionPipe-py** — 让 Python 开发者也能轻松驾驭 GPU 加速的视频处理。
