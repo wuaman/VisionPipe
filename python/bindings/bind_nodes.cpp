@@ -126,7 +126,8 @@ void bind_nodes(nb::module_& m) {
         .def("config", &DetectorNode::config, nb::rv_policy::reference_internal)
         .def("set_roi", &DetectorNode::set_roi, nb::arg("polygons"))
         .def("clear_roi", &DetectorNode::clear_roi)
-        .def("worker_count", &DetectorNode::worker_count);
+        .def("worker_count", &DetectorNode::worker_count)
+        .def("max_batch_size", &DetectorNode::max_batch_size);
 
     nb::class_<ClassifierNode, NodeBase>(m, "ClassifierNode")
         .def(nb::init<std::shared_ptr<IModelEngine>, const ClassifierConfig&, const std::string&>(),
@@ -137,7 +138,8 @@ void bind_nodes(nb::module_& m) {
              nb::arg("engine"),
              nb::arg("name"))
         .def("config", &ClassifierNode::config, nb::rv_policy::reference_internal)
-        .def("worker_count", &ClassifierNode::worker_count);
+        .def("worker_count", &ClassifierNode::worker_count)
+        .def("max_batch_size", &ClassifierNode::max_batch_size);
 
     nb::class_<YoloSegNode, NodeBase>(m, "YoloSegNode")
         .def(nb::init<std::shared_ptr<IModelEngine>, const YoloSegConfig&, const std::string&>(),
@@ -149,6 +151,7 @@ void bind_nodes(nb::module_& m) {
              nb::arg("name"))
         .def("config", &YoloSegNode::config, nb::rv_policy::reference_internal)
         .def("worker_count", &YoloSegNode::worker_count)
+        .def("max_batch_size", &YoloSegNode::max_batch_size)
         .def("last_masks", &YoloSegNode::last_masks, nb::rv_policy::reference_internal);
 
     nb::class_<RtmPoseNode, NodeBase>(m, "RtmPoseNode")
@@ -160,7 +163,8 @@ void bind_nodes(nb::module_& m) {
              nb::arg("engine"),
              nb::arg("name"))
         .def("config", &RtmPoseNode::config, nb::rv_policy::reference_internal)
-        .def("worker_count", &RtmPoseNode::worker_count);
+        .def("worker_count", &RtmPoseNode::worker_count)
+        .def("max_batch_size", &RtmPoseNode::max_batch_size);
 
     nb::class_<YoloPoseNode, NodeBase>(m, "YoloPoseNode")
         .def(nb::init<std::shared_ptr<IModelEngine>, const YoloPoseConfig&, const std::string&>(),
@@ -171,7 +175,8 @@ void bind_nodes(nb::module_& m) {
              nb::arg("engine"),
              nb::arg("name"))
         .def("config", &YoloPoseNode::config, nb::rv_policy::reference_internal)
-        .def("worker_count", &YoloPoseNode::worker_count);
+        .def("worker_count", &YoloPoseNode::worker_count)
+        .def("max_batch_size", &YoloPoseNode::max_batch_size);
 
     nb::class_<JsonResultSinkConfig>(m, "JsonResultSinkConfig")
         .def(nb::init<>())
