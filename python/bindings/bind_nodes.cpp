@@ -23,6 +23,8 @@
 #include "nodes/infer/detector_node.h"
 #include "nodes/infer/classifier_node.h"
 #include "nodes/infer/yolo_seg_node.h"
+#include "nodes/infer/rtmpose_node.h"
+#include "nodes/infer/yolo_pose_node.h"
 #include "nodes/sink/json_result_sink.h"
 #include "nodes/sink/mjpeg_sink.h"
 #include "nodes/sink/webrtc_sink.h"
@@ -149,11 +151,34 @@ void bind_nodes(nb::module_& m) {
         .def("worker_count", &YoloSegNode::worker_count)
         .def("last_masks", &YoloSegNode::last_masks, nb::rv_policy::reference_internal);
 
+    nb::class_<RtmPoseNode, NodeBase>(m, "RtmPoseNode")
+        .def(nb::init<std::shared_ptr<IModelEngine>, const RtmPoseConfig&, const std::string&>(),
+             nb::arg("engine"),
+             nb::arg("config") = RtmPoseConfig(),
+             nb::arg("name") = "rtmpose")
+        .def(nb::init<std::shared_ptr<IModelEngine>, const std::string&>(),
+             nb::arg("engine"),
+             nb::arg("name"))
+        .def("config", &RtmPoseNode::config, nb::rv_policy::reference_internal)
+        .def("worker_count", &RtmPoseNode::worker_count);
+
+    nb::class_<YoloPoseNode, NodeBase>(m, "YoloPoseNode")
+        .def(nb::init<std::shared_ptr<IModelEngine>, const YoloPoseConfig&, const std::string&>(),
+             nb::arg("engine"),
+             nb::arg("config") = YoloPoseConfig(),
+             nb::arg("name") = "yolo_pose")
+        .def(nb::init<std::shared_ptr<IModelEngine>, const std::string&>(),
+             nb::arg("engine"),
+             nb::arg("name"))
+        .def("config", &YoloPoseNode::config, nb::rv_policy::reference_internal)
+        .def("worker_count", &YoloPoseNode::worker_count);
+
     nb::class_<JsonResultSinkConfig>(m, "JsonResultSinkConfig")
         .def(nb::init<>())
         .def_rw("buffer_capacity", &JsonResultSinkConfig::buffer_capacity)
         .def_rw("include_detections", &JsonResultSinkConfig::include_detections)
-        .def_rw("include_tracks", &JsonResultSinkConfig::include_tracks);
+        .def_rw("include_tracks", &JsonResultSinkConfig::include_tracks)
+        .def_rw("include_keypoints", &JsonResultSinkConfig::include_keypoints);
 
     nb::class_<JsonResultSink, SinkNode>(m, "JsonResultSink")
         .def(nb::init<const JsonResultSinkConfig&, const std::string&>(),
@@ -188,7 +213,9 @@ void bind_nodes(nb::module_& m) {
         .def_rw("draw_detections", &AnnotatorConfig::draw_detections)
         .def_rw("draw_tracks",     &AnnotatorConfig::draw_tracks)
         .def_rw("draw_masks",      &AnnotatorConfig::draw_masks)
+        .def_rw("draw_keypoints",  &AnnotatorConfig::draw_keypoints)
         .def_rw("mask_alpha",      &AnnotatorConfig::mask_alpha)
+        .def_rw("kpt_score_threshold", &AnnotatorConfig::kpt_score_threshold)
         .def_rw("class_names",     &AnnotatorConfig::class_names);
 
     nb::class_<AnnotatorNode, NodeBase>(m, "AnnotatorNode")

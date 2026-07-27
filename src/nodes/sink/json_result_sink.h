@@ -14,6 +14,7 @@ struct JsonResultSinkConfig {
     size_t buffer_capacity = 30;
     bool include_detections = true;
     bool include_tracks = true;
+    bool include_keypoints = true;
 };
 
 class JsonResultSink : public SinkNode {

@@ -20,6 +20,8 @@
 #include "nodes/infer/detector_node.h"
 #include "nodes/infer/classifier_node.h"
 #include "nodes/infer/yolo_seg_node.h"
+#include "nodes/infer/rtmpose_node.h"
+#include "nodes/infer/yolo_pose_node.h"
 
 namespace nb = nanobind;
 using namespace visionpipe;
@@ -188,6 +190,27 @@ void bind_frame(nb::module_& m) {
         .def_rw("max_detections", &YoloSegConfig::max_detections)
         .def_rw("workers", &YoloSegConfig::workers);
 
+    nb::class_<RtmPoseConfig>(m, "RtmPoseConfig")
+        .def(nb::init<>())
+        .def_rw("input_width", &RtmPoseConfig::input_width)
+        .def_rw("input_height", &RtmPoseConfig::input_height)
+        .def_rw("target_classes", &RtmPoseConfig::target_classes)
+        .def_rw("score_threshold", &RtmPoseConfig::score_threshold)
+        .def_rw("bbox_padding", &RtmPoseConfig::bbox_padding)
+        .def_rw("simcc_split_ratio", &RtmPoseConfig::simcc_split_ratio)
+        .def_rw("max_batch_size", &RtmPoseConfig::max_batch_size)
+        .def_rw("workers", &RtmPoseConfig::workers);
+
+    nb::class_<YoloPoseConfig>(m, "YoloPoseConfig")
+        .def(nb::init<>())
+        .def_rw("input_width", &YoloPoseConfig::input_width)
+        .def_rw("input_height", &YoloPoseConfig::input_height)
+        .def_rw("score_threshold", &YoloPoseConfig::score_threshold)
+        .def_rw("nms_threshold", &YoloPoseConfig::nms_threshold)
+        .def_rw("max_detections", &YoloPoseConfig::max_detections)
+        .def_rw("num_keypoints", &YoloPoseConfig::num_keypoints)
+        .def_rw("workers", &YoloPoseConfig::workers);
+
     nb::class_<Detection>(m, "Detection")
         .def(nb::init<>())
         .def_prop_rw("bbox", &get_detection_bbox, &set_detection_bbox)
@@ -212,6 +235,17 @@ void bind_frame(nb::module_& m) {
         .def_rw("class_id", &Classification::class_id)
         .def_rw("confidence", &Classification::confidence);
 
+    nb::class_<Keypoint>(m, "Keypoint")
+        .def(nb::init<>())
+        .def_rw("x", &Keypoint::x)
+        .def_rw("y", &Keypoint::y)
+        .def_rw("score", &Keypoint::score);
+
+    nb::class_<PoseResult>(m, "PoseResult")
+        .def(nb::init<>())
+        .def_rw("detection_index", &PoseResult::detection_index)
+        .def_rw("keypoints", &PoseResult::keypoints);
+
     nb::class_<Frame>(m, "Frame", nb::dynamic_attr())
         .def(nb::init<>())
         .def_rw("stream_id", &Frame::stream_id)
@@ -221,6 +255,7 @@ void bind_frame(nb::module_& m) {
         .def_rw("classifications", &Frame::classifications)
         .def_rw("tracks", &Frame::tracks)
         .def_rw("masks", &Frame::masks)
+        .def_rw("poses", &Frame::poses)
         .def("clear", &Frame::clear)
         .def("has_image", &Frame::has_image)
         .def("image_numpy", &frame_image_numpy)

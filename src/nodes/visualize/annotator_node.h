@@ -15,7 +15,9 @@ struct AnnotatorConfig {
     bool draw_detections = true;
     bool draw_tracks = true;
     bool draw_masks = true;
+    bool draw_keypoints = true;
     float mask_alpha = 0.4f;
+    float kpt_score_threshold = 0.3f;  // 低于该置信度的关键点/骨架连线不绘制
     std::vector<std::string> class_names;  // 空则显示 class_id
 };
 
@@ -42,6 +44,7 @@ public:
 private:
     cv::Mat to_cpu_bgr(const Frame& frame);
     void draw_masks_overlay(cv::Mat& bgr, const Frame& frame);
+    void draw_keypoints_overlay(cv::Mat& bgr, const Frame& frame);
     void draw_detections_overlay(cv::Mat& bgr, const Frame& frame);
     void draw_tracks_overlay(cv::Mat& bgr, const Frame& frame);
     void write_back(Frame& frame, const cv::Mat& bgr);

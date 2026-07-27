@@ -13,6 +13,7 @@ set(VISIONPIPE_TEST_SOURCES
     unit/cpp/test_bytetrack_node.cpp
     unit/cpp/test_bytetrack_mota.cpp
     unit/cpp/test_yolo_seg_node.cpp
+    unit/cpp/test_pose_decoders.cpp
     unit/cpp/test_source_node.cpp
     unit/cpp/test_sink_node.cpp
 )

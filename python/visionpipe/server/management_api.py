@@ -493,6 +493,33 @@ class ManagementServer:
                 cfg.max_detections = p.get("max_detections", 100)
                 cfg.workers = p.get("workers", 1)
                 node_map[ns.name] = visionpipe.YoloSegNode(engine, cfg, ns.name)
+            elif ns.type == "rtmpose":
+                engine_path = p.get("engine_path")
+                if not engine_path:
+                    raise ValueError(f"Node '{ns.name}' (rtmpose) requires 'engine_path' in params")
+                engine = visionpipe.TrtModelEngine(engine_path)
+                cfg = visionpipe.RtmPoseConfig()
+                cfg.input_width = p.get("input_width", 192)
+                cfg.input_height = p.get("input_height", 256)
+                cfg.target_classes = p.get("target_classes", [0])
+                cfg.score_threshold = p.get("score_threshold", 0.3)
+                cfg.bbox_padding = p.get("bbox_padding", 1.25)
+                cfg.max_batch_size = p.get("max_batch_size", 16)
+                cfg.workers = p.get("workers", 1)
+                node_map[ns.name] = visionpipe.RtmPoseNode(engine, cfg, ns.name)
+            elif ns.type == "yolo_pose":
+                engine_path = p.get("engine_path")
+                if not engine_path:
+                    raise ValueError(f"Node '{ns.name}' (yolo_pose) requires 'engine_path' in params")
+                engine = visionpipe.TrtModelEngine(engine_path)
+                cfg = visionpipe.YoloPoseConfig()
+                cfg.input_width = p.get("input_width", 640)
+                cfg.input_height = p.get("input_height", 640)
+                cfg.score_threshold = p.get("score_threshold", 0.25)
+                cfg.nms_threshold = p.get("nms_threshold", 0.45)
+                cfg.max_detections = p.get("max_detections", 100)
+                cfg.workers = p.get("workers", 1)
+                node_map[ns.name] = visionpipe.YoloPoseNode(engine, cfg, ns.name)
             elif ns.type == "bytetrack":
                 cfg = visionpipe.ByteTrackConfig()
                 cfg.track_thresh = p.get("track_thresh", 0.5)

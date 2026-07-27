@@ -48,6 +48,21 @@ void JsonResultSink::process(Frame& frame) {
         j["tracks"] = std::move(tracks);
     }
 
+    if (config_.include_keypoints && !frame.poses.empty()) {
+        nlohmann::json poses = nlohmann::json::array();
+        for (const auto& p : frame.poses) {
+            nlohmann::json kpts = nlohmann::json::array();
+            for (const auto& kp : p.keypoints) {
+                kpts.push_back({kp.x, kp.y, kp.score});
+            }
+            poses.push_back({
+                {"detection_index", p.detection_index},
+                {"keypoints", std::move(kpts)},
+            });
+        }
+        j["poses"] = std::move(poses);
+    }
+
     json_queue_->push(j.dump());
 }
 

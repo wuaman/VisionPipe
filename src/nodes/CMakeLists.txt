@@ -18,9 +18,13 @@ if(VISIONPIPE_USE_CUDA AND VISIONPIPE_USE_TENSORRT)
         infer/detector_node.cpp
         infer/classifier_node.cpp
         infer/yolo_seg_node.cpp
+        infer/rtmpose_node.cpp
+        infer/yolo_pose_node.cpp
         infer/pre/letterbox_resize.cpp
         infer/post/detection_decoder.cpp
         infer/post/seg_mask_decoder.cpp
+        infer/post/simcc_decoder.cpp
+        infer/post/yolo_pose_decoder.cpp
     )
 endif()
 

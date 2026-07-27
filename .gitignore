@@ -24,6 +24,10 @@ TensorRT-*.tar.gz*
 # Models (downloaded via scripts)
 models/**/*.onnx
 models/**/*.engine
+models/**/*.zip
+models/**/*.pt
+models/**/*.jpg
+models/**/*.png
 
 # Test data (downloaded via scripts)
 tests/data/*.mp4

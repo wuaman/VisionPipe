@@ -56,9 +56,13 @@ ByteTrackConfig = _ext.ByteTrackConfig
 DetectorConfig = _ext.DetectorConfig
 ClassifierConfig = _ext.ClassifierConfig
 YoloSegConfig = _ext.YoloSegConfig
+RtmPoseConfig = _ext.RtmPoseConfig
+YoloPoseConfig = _ext.YoloPoseConfig
 SegmentConfig = _ext.YoloSegConfig  # deprecated: 兼容旧名，请使用 YoloSegConfig
 Detection = _ext.Detection
 Classification = _ext.Classification
+Keypoint = _ext.Keypoint
+PoseResult = _ext.PoseResult
 Track = _ext.Track
 Frame = _ext.Frame
 
@@ -75,6 +79,8 @@ ByteTrackNode = _ext.ByteTrackNode
 DetectorNode = _ext.DetectorNode
 ClassifierNode = _ext.ClassifierNode
 YoloSegNode = _ext.YoloSegNode
+RtmPoseNode = _ext.RtmPoseNode
+YoloPoseNode = _ext.YoloPoseNode
 SegmentNode = _ext.YoloSegNode  # deprecated: 兼容旧名，请使用 YoloSegNode
 Pipeline = _ext.Pipeline
 PipelineBuilder = _ext.PipelineBuilder
@@ -186,8 +192,12 @@ __all__ = [
     "ClassifierConfig",
     "SegmentConfig",
     "YoloSegConfig",
+    "RtmPoseConfig",
+    "YoloPoseConfig",
     "Detection",
     "Classification",
+    "Keypoint",
+    "PoseResult",
     "Track",
     "Frame",
     "IModelEngine",
@@ -203,6 +213,8 @@ __all__ = [
     "ClassifierNode",
     "SegmentNode",
     "YoloSegNode",
+    "RtmPoseNode",
+    "YoloPoseNode",
     "Pipeline",
     "PipelineBuilder",
     "PipelineManager",

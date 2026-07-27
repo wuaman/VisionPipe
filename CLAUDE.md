@@ -79,7 +79,8 @@ uv run mypy python/
 ├───────────────────────────────────────────────────────────────┤
 │                       节点库层                                  │
 │  Source: FileSource, RtspSource (cv::cudacodec NVDEC)          │
-│  Infer:  DetectorNode, ClassifierNode, YoloSegNode             │
+│  Infer:  DetectorNode, ClassifierNode, YoloSegNode,            │
+│          RtmPoseNode, YoloPoseNode                             │
 │  Track:  ByteTrackNode                                         │
 │  Sink:   JsonResultSink, MjpegSink, WebRTCSink                 │
 │  Viz:    AnnotatorNode                                         │
@@ -115,6 +116,8 @@ uv run mypy python/
 | `DetectorNode` | `src/nodes/infer/detector_node.h` | `DetectorConfig` | YOLOv8 目标检测 + NMS，支持 set_roi/clear_roi 热更新 |
 | `ClassifierNode` | `src/nodes/infer/classifier_node.h` | `ClassifierConfig` | 裁切+分类推理 |
 | `YoloSegNode` | `src/nodes/infer/yolo_seg_node.h` | `YoloSegConfig` | YOLOv8/11-seg 实例分割（检测+掩码双输出），旧名 SegmentNode 保留为 Python 别名 |
+| `RtmPoseNode` | `src/nodes/infer/rtmpose_node.h` | `RtmPoseConfig` | RTMPose top-down 关键点检测（SimCC 解码，依赖上游检测框） |
+| `YoloPoseNode` | `src/nodes/infer/yolo_pose_node.h` | `YoloPoseConfig` | YOLOv8/11-pose 单阶段关键点检测（框+关键点一次输出） |
 | `ByteTrackNode` | `src/nodes/tracker/bytetrack_node.h` | `ByteTrackConfig` | CPU 多目标跟踪 |
 | `AnnotatorNode` | `src/nodes/visualize/annotator_node.h` | `AnnotatorConfig` | 可视化标注（检测框/轨迹/掩码） |
 | `JsonResultSink` | `src/nodes/sink/json_result_sink.h` | `JsonResultSinkConfig` | JSON 结构化输出（内部队列 + pop_json） |
@@ -140,10 +143,10 @@ VisionPipeError (runtime_error)
 `python/visionpipe/__init__.py` 从 nanobind 扩展 `visionpipe_python` 重导出：
 
 - **枚举**: PipelineState, PipelineStatus, NodeState, OverflowPolicy, DecodeMode
-- **数据**: Frame, Detection, Track, QueueStats, NodeStats, PipelineConfig, PipelineStats
-- **配置**: SourceConfig, DetectorConfig, ClassifierConfig, YoloSegConfig, ByteTrackConfig, AnnotatorConfig, JsonResultSinkConfig, MjpegSinkConfig, WebRTCSinkConfig
+- **数据**: Frame, Detection, Track, Keypoint, PoseResult, QueueStats, NodeStats, PipelineConfig, PipelineStats
+- **配置**: SourceConfig, DetectorConfig, ClassifierConfig, YoloSegConfig, RtmPoseConfig, YoloPoseConfig, ByteTrackConfig, AnnotatorConfig, JsonResultSinkConfig, MjpegSinkConfig, WebRTCSinkConfig
 - **引擎**: IModelEngine, MockModelEngine, TrtModelEngine
-- **节点**: NodeBase, FileSource, RtspSource, DetectorNode, ClassifierNode, YoloSegNode, ByteTrackNode, AnnotatorNode, JsonResultSink, MjpegSink, WebRTCSink
+- **节点**: NodeBase, FileSource, RtspSource, DetectorNode, ClassifierNode, YoloSegNode, RtmPoseNode, YoloPoseNode, ByteTrackNode, AnnotatorNode, JsonResultSink, MjpegSink, WebRTCSink
 - **管道**: Pipeline, PipelineBuilder, PipelineManager
 
 Python 层额外提供：

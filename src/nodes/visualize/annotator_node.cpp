@@ -46,6 +46,9 @@ void AnnotatorNode::process(Frame& frame) {
     if (config_.draw_tracks && !frame.tracks.empty()) {
         draw_tracks_overlay(bgr, frame);
     }
+    if (config_.draw_keypoints && !frame.poses.empty()) {
+        draw_keypoints_overlay(bgr, frame);
+    }
 
     write_back(frame, bgr);
 }
@@ -136,6 +139,52 @@ void AnnotatorNode::draw_masks_overlay(cv::Mat& bgr, const Frame& frame) {
     }
 
     cv::addWeighted(bgr, 1.0 - config_.mask_alpha, colored, config_.mask_alpha, 0.0, bgr);
+}
+
+void AnnotatorNode::draw_keypoints_overlay(cv::Mat& bgr, const Frame& frame) {
+    const int H = bgr.rows;
+    const int W = bgr.cols;
+
+    // COCO-17 骨架连线（关键点下标对）
+    static const int kSkeleton[][2] = {
+        {15, 13}, {13, 11}, {16, 14}, {14, 12},  // 腿
+        {11, 12},                                // 髋
+        {5, 11}, {6, 12},                        // 躯干
+        {5, 6},                                  // 肩
+        {5, 7}, {7, 9}, {6, 8}, {8, 10},         // 臂
+        {0, 1}, {0, 2}, {1, 3}, {2, 4},          // 头
+        {3, 5}, {4, 6},                          // 耳-肩
+    };
+
+    for (size_t p = 0; p < frame.poses.size(); ++p) {
+        const auto& kpts = frame.poses[p].keypoints;
+        const cv::Scalar col = color_for(static_cast<int>(p));
+
+        // 骨架连线（仅 COCO-17 布局时绘制）
+        if (kpts.size() >= 17) {
+            for (const auto& edge : kSkeleton) {
+                const Keypoint& a = kpts[edge[0]];
+                const Keypoint& b = kpts[edge[1]];
+                if (a.score < config_.kpt_score_threshold ||
+                    b.score < config_.kpt_score_threshold) {
+                    continue;
+                }
+                cv::line(bgr,
+                         cv::Point(static_cast<int>(a.x * W), static_cast<int>(a.y * H)),
+                         cv::Point(static_cast<int>(b.x * W), static_cast<int>(b.y * H)),
+                         col, 2, cv::LINE_AA);
+            }
+        }
+
+        for (const auto& kp : kpts) {
+            if (kp.score < config_.kpt_score_threshold) {
+                continue;
+            }
+            cv::circle(bgr,
+                       cv::Point(static_cast<int>(kp.x * W), static_cast<int>(kp.y * H)),
+                       3, col, -1, cv::LINE_AA);
+        }
+    }
 }
 
 void AnnotatorNode::draw_detections_overlay(cv::Mat& bgr, const Frame& frame) {

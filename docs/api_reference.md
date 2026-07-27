@@ -33,10 +33,10 @@
 |------|------|
 | 枚举 | `PipelineState`, `PipelineStatus`, `NodeState`, `OverflowPolicy`, `DecodeMode` |
 | 数据 | `Frame`, `Detection`, `Classification`, `Track`, `QueueStats`, `NodeStats`, `PipelineStats`, `PipelineConfig` |
-| 配置 | `SourceConfig`, `DetectorConfig`, `ClassifierConfig`, `YoloSegConfig`, `ByteTrackConfig`, `AnnotatorConfig`, `JsonResultSinkConfig`, `MjpegSinkConfig`, `WebRTCSinkConfig` |
+| 配置 | `SourceConfig`, `DetectorConfig`, `ClassifierConfig`, `YoloSegConfig`, `RtmPoseConfig`, `YoloPoseConfig`, `ByteTrackConfig`, `AnnotatorConfig`, `JsonResultSinkConfig`, `MjpegSinkConfig`, `WebRTCSinkConfig` |
 | HAL  | `IModelEngine`, `MockModelEngine`, `TrtModelEngine` |
 | 节点基类 | `NodeBase`, `SourceNode`, `SinkNode`, `ProcessProxyNode`, `PyNode`, `CustomNode`, `FrameView` |
-| 节点实现 | `FileSource`, `RtspSource`, `DetectorNode`, `ClassifierNode`, `YoloSegNode`, `ByteTrackNode`, `AnnotatorNode`, `JsonResultSink`, `MjpegSink`, `WebRTCSink` |
+| 节点实现 | `FileSource`, `RtspSource`, `DetectorNode`, `ClassifierNode`, `YoloSegNode`, `RtmPoseNode`, `YoloPoseNode`, `ByteTrackNode`, `AnnotatorNode`, `JsonResultSink`, `MjpegSink`, `WebRTCSink` |
 | 编排 | `Pipeline`, `PipelineBuilder`, `PipelineManager` |
 | 序列化 | `PipelineSpec`, `NodeSpec`, `EdgeSpec`, `Pipeline.export_yaml`, `Pipeline.load_yaml`, `Pipeline.from_yaml`, `Pipeline.rebuild_from_spec` |
 | 异常 | `VisionPipeError`, `ConfigError`, `NotFoundError`, `CudaError`, `ModelLoadError`, `InferError`, `StreamError` |

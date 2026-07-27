@@ -43,6 +43,19 @@ struct Classification {
     float confidence = 0.0f;   ///< 置信度
 };
 
+/// @brief 单个关键点
+struct Keypoint {
+    float x = 0.0f;      ///< 归一化 x 坐标（相对原图宽度）
+    float y = 0.0f;      ///< 归一化 y 坐标（相对原图高度）
+    float score = 0.0f;  ///< 置信度
+};
+
+/// @brief 单个目标的关键点集合（如 COCO-17 人体关键点）
+struct PoseResult {
+    int detection_index = -1;         ///< 关联的 detection 索引，-1 表示无关联
+    std::vector<Keypoint> keypoints;  ///< 关键点列表，顺序由模型的关键点定义决定
+};
+
 /// @brief 帧数据结构
 struct Frame {
     int64_t stream_id = 0;           ///< 流标识符，同一 pipeline 内唯一
@@ -53,6 +66,7 @@ struct Frame {
     std::vector<Classification> classifications;  ///< 分类结果
     std::vector<Track> tracks;          ///< 追踪结果
     std::vector<std::vector<uint8_t>> masks;  ///< 分割掩码，每个 detection 对应一个，orig_h×orig_w 行优先 0/255
+    std::vector<PoseResult> poses;   ///< 关键点结果，经 detection_index 关联检测框
     std::unordered_map<std::string, std::any> user_data;  ///< 用户附加数据，按 key 隔离
 
     /// @brief 默认构造函数
@@ -79,6 +93,7 @@ struct Frame {
         classifications.clear();
         tracks.clear();
         masks.clear();
+        poses.clear();
         user_data.clear();
     }
 

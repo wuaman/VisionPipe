@@ -34,6 +34,8 @@ NodeType = Literal[
     "detector",
     "classifier",
     "segment",
+    "rtmpose",
+    "yolo_pose",
     "bytetrack",
     "annotator",
     "py_node",
@@ -121,6 +123,8 @@ def _node_type_str(node: Any) -> str:
         "DetectorNode": "detector",
         "ClassifierNode": "classifier",
         "YoloSegNode": "segment",
+        "RtmPoseNode": "rtmpose",
+        "YoloPoseNode": "yolo_pose",
         "ByteTrackNode": "bytetrack",
         "AnnotatorNode": "annotator",
         "PyNode": "py_node",
@@ -187,6 +191,27 @@ def _node_params(node: Any) -> dict[str, Any]:
             "score_threshold": cfg.score_threshold,
             "nms_threshold": cfg.nms_threshold,
             "mask_threshold": cfg.mask_threshold,
+            "max_detections": cfg.max_detections,
+            "workers": cfg.workers,
+        }
+    if type_name == "RtmPoseNode":
+        cfg = node.config()
+        return {
+            "input_width": cfg.input_width,
+            "input_height": cfg.input_height,
+            "target_classes": list(cfg.target_classes),
+            "score_threshold": cfg.score_threshold,
+            "bbox_padding": cfg.bbox_padding,
+            "max_batch_size": cfg.max_batch_size,
+            "workers": cfg.workers,
+        }
+    if type_name == "YoloPoseNode":
+        cfg = node.config()
+        return {
+            "input_width": cfg.input_width,
+            "input_height": cfg.input_height,
+            "score_threshold": cfg.score_threshold,
+            "nms_threshold": cfg.nms_threshold,
             "max_detections": cfg.max_detections,
             "workers": cfg.workers,
         }
